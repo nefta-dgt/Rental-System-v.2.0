@@ -148,9 +148,9 @@ recordsRouter.post(
       const woId = await nextDailyId(tx, "WO");
       await tx.execute(
         sql`insert into rental.work_order
-              (wo_id, "user", location, rc_type, wo_start_date, wo_finish_date, unit_id, unit_type, qty, time, volume, pipe, remarks, rc_id)
+              (wo_id, "user", created_by, location, rc_type, wo_start_date, wo_finish_date, unit_id, unit_type, qty, time, volume, pipe, remarks, rc_id)
             values
-              (${woId}, ${name}, ${b.location}, ${b.rcType}, ${b.startDate}::date, ${finish}::date, ${unit.unit_id}, ${unit.unit_type},
+              (${woId}, ${name}, ${userId}::uuid, ${b.location}, ${b.rcType}, ${b.startDate}::date, ${finish}::date, ${unit.unit_id}, ${unit.unit_type},
                ${b.qty}, ${b.time ?? null}, ${b.volume ?? 0}, ${b.pipe}, ${b.remarks}, ${b.rcId})`,
       );
 
