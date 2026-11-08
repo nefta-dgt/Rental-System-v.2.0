@@ -5,6 +5,11 @@ export type Me = {
   sections: string[]
 }
 
+export type WorkOrder = { id: string; rcId: string | null; location: string | null }
+export type Cell = { wo: WorkOrder[]; standby: boolean; maintenance: string | null }
+export type ScheduleUnit = { unitId: string; unitType: string | null; active: boolean; cells: Cell[] }
+export type Schedule = { from: string; to: string; days: string[]; units: ScheduleUnit[] }
+
 export class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -19,8 +24,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { 'content-type': 'application/json', ...init?.headers },
     credentials: 'same-origin',
   })
-  const body = await res.json().catch(() => ({}))
-  if (!res.ok) throw new ApiError(res.status, body.error ?? 'Terjadi kesalahan')
+  const isJson = res.headers.get('content-type')?.includes('application/json')
+  const body = isJson ? await res.json().catch(() => null) : null
+  if (!res.ok) throw new ApiError(res.status, body?.error ?? 'Terjadi kesalahan')
+  if (body === null) throw new ApiError(res.status, 'Respons server tidak valid')
   return body as T
 }
 
@@ -32,4 +39,5 @@ export const api = {
       body: JSON.stringify({ username, password }),
     }),
   logout: () => request<{ ok: boolean }>('/api/logout', { method: 'POST' }),
+  schedule: (from: string) => request<Schedule>(`/api/schedule?from=${encodeURIComponent(from)}`),
 }
