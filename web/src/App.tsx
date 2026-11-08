@@ -5,6 +5,8 @@ import Layout from './Layout'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import Schedule from './pages/Schedule'
+import DayRecordForm from './pages/records/DayRecordForm'
+import WorkOrderForm from './pages/records/WorkOrderForm'
 
 const queryClient = new QueryClient()
 
@@ -19,6 +21,15 @@ export default function App() {
               <Route path="/" element={<Home />} />
               <Route element={<RequirePermission permission="schedule:view" />}>
                 <Route path="/schedule" element={<Schedule />} />
+              </Route>
+              <Route element={<RequirePermission permission="work_order:create" />}>
+                <Route path="/schedule/work-order" element={<WorkOrderForm />} />
+              </Route>
+              <Route element={<RequirePermission permission="maintenance:create" />}>
+                <Route path="/schedule/maintenance" element={<DayRecordForm kind="maintenance" />} />
+              </Route>
+              <Route element={<RequirePermission permission="standby:create" />}>
+                <Route path="/schedule/standby" element={<DayRecordForm kind="standby" />} />
               </Route>
             </Route>
           </Route>
