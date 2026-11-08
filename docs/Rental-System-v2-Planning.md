@@ -1,0 +1,61 @@
+# Rental System v2.0 — catatan perencanaan
+
+Ditulis 2026-11-07 dari percakapan perencanaan di project v1 (`~/Desktop/Project-Adams/n8n-dashboard-sheet`).
+Tujuan file ini: supaya sesi baru di project v2 bisa langsung nyambung. Baca file ini dulu sebelum mulai.
+
+## Tujuan v2
+- Sistem baru memakai **React** dan **sistem login**.
+- Fitur pertama: **merombak ulang "Unit Schedule"** (v1: `public/unit_schedule.html`, `public/unit_schedule_report.html`).
+- Dikembangkan fitur demi fitur, tiap fitur di branch sendiri.
+
+## Keadaan v1 (yang ada sekarang)
+- Backend: Node.js + Express 5, PostgreSQL lewat `pg` mentah (tanpa ORM), Socket.io, Multer, dotenv. File: `index.js`, `routes/api.js`, `routes/dashboard.js`, `config/db.js`.
+- Frontend: HTML biasa per halaman di `public/`, Tailwind lewat CDN, JS di dalam file HTML + `public/js/` (sidebar.js, nice-alert.js). Tanpa React, tanpa build.
+- Bot WhatsApp: `wa/whatsapptosql.js`, proses Node terpisah, kirim ke webhook n8n.
+- Database: PostgreSQL, search_path `rental`. Ada schema lain (`finance`, `hr`). `hr.users` dipakai tabel lain sebagai acuan user_id (kandidat dasar login).
+- Live: http://187.77.125.130:3000. Deploy lewat Coolify, **push ke `main` v1 otomatis redeploy live**.
+- Staging lokal: DB `company_staging` (PostgreSQL 18, port 5433), dijalankan dengan `npm run staging` (branch `staging-runner` di repo v1, belum di-merge). `.env.staging` hanya ada di laptop, tidak masuk git.
+
+## Keputusan yang sudah diambil
+- v2 dibuat sebagai **repo terpisah** (rekomendasi: `rental-system-v2`, Private). Alasan: v2 sistem baru yang berumur panjang, branch panjang di repo v1 akan makin menjauh dari `main` v1 dan konfliknya besar; deploy v2 harus terpisah dari Coolify v1.
+- Alur git: branch per fitur, merge ke `main` lewat PR. Direct ke `main` hanya untuk perbaikan kecil.
+- Jangan `git add -A`; pakai `git add <nama file>`.
+- Jangan salin `.env` / `.env.staging` ke git; pastikan `.gitignore` mengabaikannya sejak commit pertama.
+
+## Rekomendasi tech stack (belum final)
+Backend:
+- Node.js + Express (atau Fastify) + TypeScript
+- PostgreSQL
+- Akses DB: **Drizzle** direkomendasikan (struktur tabel bertipe, migrasi otomatis); alternatif tetap `pg` mentah seperti v1. **Belum diputuskan.** Hindari Prisma kalau skema DB lama dipakai ulang.
+- Login: sesi lewat cookie httpOnly, password di-hash (argon2/bcrypt), tabel user bisa mulai dari `hr.users`, siapkan peran (admin, operator, finance) dari awal.
+- Validasi input: Zod
+
+Frontend:
+- React + Vite + TypeScript, Tailwind CSS, TanStack Query, React Router
+- Tabel jadwal unit x hari: bangun sendiri (TanStack Table + virtualisasi), bukan library kalender (FullCalendar resource timeline berbayar).
+
+Struktur repo yang disarankan: satu repo, dua folder `server/` dan `web/`; backend menyajikan hasil build frontend, jadi di Coolify satu aplikasi.
+Tidak disarankan sekarang: Next.js / framework full-stack, mikroservis.
+
+## Keputusan yang MASIH TERBUKA
+1. **Database:** v2 memakai DB yang sama dengan v1 live, atau skema baru? Kalau sama: migrasi v2 hanya boleh menambah (tabel/kolom baru), jangan hapus atau ubah yang dipakai v1 (insiden 2026-11-02: migrasi yang menghapus kolom merusak kode live lama). Kembangkan di staging dulu.
+2. **Backend:** pakai ulang logika/endpoint v1 (Work Order, Rent Contract, Standby) atau tulis baru?
+3. **Drizzle atau `pg` mentah.**
+4. **Kapan v1 dimatikan** dan bagaimana perbaikan di v1 selama masa transisi.
+5. **Sidebar/navigasi** v2: dibuat ulang atau link balik ke v1.
+6. **Fitur Unit Schedule yang wajib ada:** daftar belum dicatat. Di v1 ada Search unit, tabel per-hari, laporan periode per tipe unit dengan CSV, sinkron dengan Standby Log dan Work Order. Perlu ditanyakan: apa masalah utama versi sekarang (tampilan, kecepatan, cara pakai)?
+7. **Timeline:** akan dibicarakan user (belum ada).
+
+## Langkah menyiapkan project v2
+1. Buat repo kosong di GitHub (tanpa README/.gitignore). `gh` belum ter-install, pakai browser.
+2. Buat folder project (di luar folder v1), misalnya `~/Desktop/Project-Adams/rental-system-v2`.
+3. `git init`, `git remote add origin ...`, commit pertama (README + .gitignore), push ke `main`.
+4. Scaffold React (Vite) dan server, tiap fitur di branch sendiri.
+Folder dengan nama "Rental System v.2.0" di Desktop ini hanya tempat catatan, belum repo.
+
+## Hal terbuka dari v1 (jangan lupa)
+- Branch `staging-runner` dan `gitignore-ds-store` di repo v1 sudah di-push tapi belum di-merge (opsional).
+- Migrasi `finance_expenses_request` (SQL + rollback) dan `docs/` (skema DB) dipindahkan ke `~/Desktop/n8n-parkir`. Belum diverifikasi apakah tabel `finance.expenses_request` sudah ada di DB staging atau live.
+- Smoke test live v1 belum tercatat selesai: ID `WO26-mmdd-001`/`RC26-mmdd-001`, Operational Expenses Rent Contract, Standby Log, Unit Activity, Operator Payout, Unit Schedule Search unit.
+- 5 branch lama di repo v1 sudah ter-merge dan aman dihapus.
+- 754 dari 913 hari standby belum punya link timesheet (opsional).
