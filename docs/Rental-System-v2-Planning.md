@@ -51,6 +51,10 @@ Tidak disarankan sekarang: Next.js / framework full-stack, mikroservis.
    - Pengecualian per user: pakai ulang `hr.users.allowed_sections_override`, atau skema baru yang bisa membedakan lihat dan ubah.
    - Penegakan: wajib dicek di **server** pada tiap endpoint, tidak cukup menyembunyikan tombol di web.
    - Daftar fitur dan siapa yang boleh mengubah masing-masing (belum dicatat).
+
+   **Status 2026-11-08 (branch `feature/access-control`):** pola dipilih = peran + izin + pengecualian per user, dengan kolom `scope` disiapkan untuk aturan berbasis data nanti. Schema baru `access` dibuat di **staging saja** (`server/migrations/2026-11-08_create_access_schema.sql`, pembatalan: `.rollback.sql`): `permission`, `role_permission`, `user_permission`, `audit_log`. Hanya menambah, `hr.*` tidak diubah. Izin berbentuk `fitur:aksi`; deny selalu menang; tidak tercatat = ditolak; `*` = semua izin. Dicek di server per permintaan (`server/src/access.ts`). Data awal: katalog izin jadwal dan `access:manage`, serta Superadmin = `*`.
+   - **Belum:** pembagian peran (menunggu aturan), halaman pengaturan akses khusus Superadmin, penulisan `audit_log` (tabel sudah ada), endpoint ubah jadwal (`schedule:edit`), dan migrasi ke DB live (belum dijalankan di live).
+   - **Catatan data:** `hr.users` tidak terhubung ke `hr.employee` dengan ID, dan `work_order.user` berisi nama operator (bukan akun login), jadi aturan "data milik sendiri" butuh pemetaan dulu.
 9. **Penyimpanan sesi login:** sementara sesi disimpan di **memori server** (keputusan 2026-11-08, untuk pengembangan di staging). Konsekuensi: semua user logout tiap server restart/redeploy. **Wajib pindah ke tabel sesi di DB sebelum v2 dipakai user sungguhan di live.**
 
 ## Langkah menyiapkan project v2
