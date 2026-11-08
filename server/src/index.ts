@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, rolePermissions, users } from "./db.js";
 import { scheduleRouter } from "./schedule.js";
+import { effectivePermissionKeys, requirePermission } from "./access.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -63,15 +64,17 @@ app.get("/api/me", async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: "Belum login" });
   const [user] = await db.select().from(users).where(eq(users.userId, req.session.userId));
   if (!user || !user.isActive) return res.status(401).json({ error: "Belum login" });
-  res.json({ username: user.username, name: user.employeeName, role: user.role, sections: await loadSections(user) });
+  res.json({
+    username: user.username,
+    name: user.employeeName,
+    role: user.role,
+    sections: await loadSections(user),
+    permissions: await effectivePermissionKeys(user.userId),
+  });
 });
 
-// Semua jadwal bisa dilihat user yang sudah login. Hak ubah menyusul (daftar terbuka poin 8).
-const requireLogin: express.RequestHandler = (req, res, next) => {
-  if (!req.session.userId) return res.status(401).json({ error: "Belum login" });
-  next();
-};
-app.use("/api/schedule", requireLogin, scheduleRouter);
+// Jadwal hanya bisa dilihat user dengan izin schedule:view. Hak ubah menyusul di endpoint ubah, dengan schedule:edit.
+app.use("/api/schedule", requirePermission("schedule:view"), scheduleRouter);
 
 const port = Number(process.env.PORT ?? 3200);
 app.listen(port, () => console.log(`Server v2 jalan di http://localhost:${port}`));

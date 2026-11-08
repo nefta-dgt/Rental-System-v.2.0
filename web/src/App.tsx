@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
-import { RequireAuth } from './auth'
+import { RequireAuth, RequirePermission } from './auth'
 import Layout from './Layout'
 import Home from './pages/Home'
 import Login from './pages/Login'
@@ -17,7 +17,9 @@ export default function App() {
           <Route element={<RequireAuth />}>
             <Route element={<Layout />}>
               <Route path="/" element={<Home />} />
-              <Route path="/schedule" element={<Schedule />} />
+              <Route element={<RequirePermission permission="schedule:view" />}>
+                <Route path="/schedule" element={<Schedule />} />
+              </Route>
             </Route>
           </Route>
         </Routes>
