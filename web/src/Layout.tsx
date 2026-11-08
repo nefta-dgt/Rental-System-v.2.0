@@ -23,9 +23,9 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-slate-100">
-      <header className="flex items-center justify-between bg-white px-6 py-3 shadow-sm">
-        <div className="flex items-center gap-4">
-          <span className="font-semibold text-slate-900">Rental System v2</span>
+      <header className="flex items-center justify-between gap-2 bg-white px-3 py-3 shadow-sm sm:px-6">
+        <div className="flex items-center gap-2 sm:gap-4">
+          <span className="hidden whitespace-nowrap font-semibold text-slate-900 sm:inline">Rental System v2</span>
           <nav className="flex gap-1">
             <NavLink to="/" end className={linkClass}>
               Beranda
@@ -35,14 +35,14 @@ export default function Layout() {
             </NavLink>
           </nav>
         </div>
-        <div className="flex items-center gap-4 text-sm">
-          <span className="text-slate-600">
+        <div className="flex items-center gap-2 text-sm sm:gap-4">
+          <span className="hidden text-slate-600 sm:inline">
             {me.name} <span className="text-slate-400">({me.role ?? 'tanpa peran'})</span>
           </span>
           <button
             onClick={() => logout.mutate()}
             disabled={logout.isPending}
-            className="rounded-md border border-slate-300 px-3 py-1 hover:bg-slate-50"
+            className="whitespace-nowrap rounded-md border border-slate-300 px-3 py-1 hover:bg-slate-50"
           >
             Keluar
           </button>

@@ -5,7 +5,14 @@ export type Me = {
   sections: string[]
 }
 
-export type WorkOrder = { id: string; rcId: string | null; location: string | null }
+export type WorkOrder = {
+  id: string
+  rcId: string | null
+  rcType: string | null
+  location: string | null
+  start: string
+  finish: string
+}
 export type Cell = { wo: WorkOrder[]; standby: boolean; maintenance: string | null }
 export type ScheduleUnit = { unitId: string; unitType: string | null; active: boolean; cells: Cell[] }
 export type Schedule = { from: string; to: string; days: string[]; units: ScheduleUnit[] }
@@ -39,5 +46,6 @@ export const api = {
       body: JSON.stringify({ username, password }),
     }),
   logout: () => request<{ ok: boolean }>('/api/logout', { method: 'POST' }),
-  schedule: (from: string) => request<Schedule>(`/api/schedule?from=${encodeURIComponent(from)}`),
+  schedule: (from: string, to: string) =>
+    request<Schedule>(`/api/schedule?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
 }
