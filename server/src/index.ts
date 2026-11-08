@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, rolePermissions, users } from "./db.js";
 import { scheduleRouter } from "./schedule.js";
+import { recordsRouter } from "./records.js";
 import { effectivePermissionKeys, requirePermission } from "./access.js";
 
 declare module "express-session" {
@@ -75,6 +76,15 @@ app.get("/api/me", async (req, res) => {
 
 // Jadwal hanya bisa dilihat user dengan izin schedule:view. Hak ubah menyusul di endpoint ubah, dengan schedule:edit.
 app.use("/api/schedule", requirePermission("schedule:view"), scheduleRouter);
+
+// Membuat work order, maintenance, dan standby. Izin dicek per endpoint di dalam router.
+app.use("/api", recordsRouter);
+
+// Penangkap terakhir supaya error tak terduga tetap berupa JSON, bukan halaman HTML.
+app.use(((err, _req, res, _next) => {
+  console.error(err);
+  res.status(500).json({ error: "Terjadi kesalahan di server" });
+}) as express.ErrorRequestHandler);
 
 const port = Number(process.env.PORT ?? 3200);
 app.listen(port, () => console.log(`Server v2 jalan di http://localhost:${port}`));
