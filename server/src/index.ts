@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, rolePermissions, users } from "./db.js";
+import { scheduleRouter } from "./schedule.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -64,6 +65,13 @@ app.get("/api/me", async (req, res) => {
   if (!user || !user.isActive) return res.status(401).json({ error: "Belum login" });
   res.json({ username: user.username, name: user.employeeName, role: user.role, sections: await loadSections(user) });
 });
+
+// Semua jadwal bisa dilihat user yang sudah login. Hak ubah menyusul (daftar terbuka poin 8).
+const requireLogin: express.RequestHandler = (req, res, next) => {
+  if (!req.session.userId) return res.status(401).json({ error: "Belum login" });
+  next();
+};
+app.use("/api/schedule", requireLogin, scheduleRouter);
 
 const port = Number(process.env.PORT ?? 3200);
 app.listen(port, () => console.log(`Server v2 jalan di http://localhost:${port}`));
