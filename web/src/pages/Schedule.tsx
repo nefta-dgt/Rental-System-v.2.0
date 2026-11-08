@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { api, type Cell, type ScheduleUnit, type WorkOrder } from '../api'
+import Dropdown, { type DropdownOption } from '../components/Dropdown'
 
 type Kind = 'wo' | 'standby' | 'maintenance'
 type Bar = {
@@ -161,10 +162,18 @@ export default function Schedule() {
     return m
   }, [data])
 
-  const types = useMemo(
-    () => [...new Set((data?.units ?? []).map((u) => u.unitType || NO_TYPE))].sort((a, b) => (a === NO_TYPE ? 1 : b === NO_TYPE ? -1 : a.localeCompare(b))),
-    [data],
-  )
+  const typeOptions = useMemo<DropdownOption[]>(() => {
+    const counts = new Map<string, number>()
+    let total = 0
+    for (const u of data?.units ?? []) {
+      if (!showInactive && !u.active) continue
+      const t = u.unitType || NO_TYPE
+      counts.set(t, (counts.get(t) ?? 0) + 1)
+      total++
+    }
+    const sorted = [...counts.entries()].sort(([a], [b]) => (a === NO_TYPE ? 1 : b === NO_TYPE ? -1 : a.localeCompare(b)))
+    return [{ value: '', label: 'Semua tipe', hint: total }, ...sorted.map(([t, c]) => ({ value: t, label: t, hint: c }))]
+  }, [data, showInactive])
 
   const groups = useMemo(() => {
     if (!data) return []
@@ -249,14 +258,7 @@ export default function Schedule() {
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="mr-auto text-lg font-semibold text-slate-900">Jadwal unit</h1>
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari unit, misalnya K-33" aria-label="Cari unit" className={`${inputClass} w-44`} />
-        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} aria-label="Filter tipe unit" className={inputClass}>
-          <option value="">Semua tipe</option>
-          {types.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
+        <Dropdown value={typeFilter} onChange={setTypeFilter} options={typeOptions} label="Filter tipe unit" />
         <label className="flex items-center gap-2 text-sm text-slate-600">
           <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
           Unit nonaktif
