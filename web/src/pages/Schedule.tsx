@@ -255,7 +255,7 @@ export default function Schedule() {
   const inputClass = 'rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm outline-none focus:border-blue-500'
 
   return (
-    <main className="mx-auto max-w-6xl space-y-4 p-4 sm:p-6">
+    <main className="space-y-4 p-4 sm:p-6">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="mr-auto text-lg font-semibold text-slate-900">Jadwal unit</h1>
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari unit, misalnya K-33" aria-label="Cari unit" className={`${inputClass} w-44`} />
