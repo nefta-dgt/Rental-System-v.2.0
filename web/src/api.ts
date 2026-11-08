@@ -3,6 +3,7 @@ export type Me = {
   name: string
   role: string | null
   sections: string[]
+  permissions: string[]
 }
 
 export type WorkOrder = {

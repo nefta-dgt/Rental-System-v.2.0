@@ -1,13 +1,14 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { api } from './api'
-import { meKey, useMe } from './auth'
+import { meKey, useCan, useMe } from './auth'
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   `rounded-md px-3 py-1 text-sm ${isActive ? 'bg-slate-100 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`
 
 export default function Layout() {
   const { data: me } = useMe()
+  const can = useCan()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
@@ -30,9 +31,11 @@ export default function Layout() {
             <NavLink to="/" end className={linkClass}>
               Beranda
             </NavLink>
-            <NavLink to="/schedule" className={linkClass}>
-              Jadwal unit
-            </NavLink>
+            {can('schedule:view') && (
+              <NavLink to="/schedule" className={linkClass}>
+                Jadwal unit
+              </NavLink>
+            )}
           </nav>
         </div>
         <div className="flex items-center gap-2 text-sm sm:gap-4">
