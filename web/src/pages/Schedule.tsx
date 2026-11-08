@@ -3,6 +3,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { api, type Cell, type ScheduleUnit, type WorkOrder } from '../api'
 import Dropdown, { type DropdownOption } from '../components/Dropdown'
+import { properCase } from '../text'
 
 type Kind = 'wo' | 'standby' | 'maintenance'
 type Bar = {
@@ -79,7 +80,7 @@ function buildBars(unit: ScheduleUnit): { bars: Bar[]; lanes: number } {
     }),
   )
   woMap.forEach(({ wo, start, end }) =>
-    bars.push({ key: `wo:${wo.id}`, kind: 'wo', start, end, label: `${wo.rcType ?? '-'} : ${wo.location ?? '-'}`, conflict: false, wo }),
+    bars.push({ key: `wo:${wo.id}`, kind: 'wo', start, end, label: `${wo.rcType ?? '-'} : ${wo.location ? properCase(wo.location) : '-'}`, conflict: false, wo }),
   )
 
   for (let i = 0; i < n; i++) {
@@ -420,7 +421,7 @@ export default function Schedule() {
                 <dt className="text-slate-400">Tipe</dt>
                 <dd>{detail.bar.wo.rcType ?? '-'}</dd>
                 <dt className="text-slate-400">Lokasi</dt>
-                <dd>{detail.bar.wo.location ?? '-'}</dd>
+                <dd>{detail.bar.wo.location ? properCase(detail.bar.wo.location) : '-'}</dd>
                 <dt className="text-slate-400">No. WO</dt>
                 <dd className="break-all">{detail.bar.wo.id}</dd>
                 {detail.bar.wo.rcId && (
