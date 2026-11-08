@@ -45,6 +45,13 @@ Tidak disarankan sekarang: Next.js / framework full-stack, mikroservis.
 5. **Sidebar/navigasi** v2: dibuat ulang atau link balik ke v1.
 6. **Fitur Unit Schedule yang wajib ada:** daftar belum dicatat. Di v1 ada Search unit, tabel per-hari, laporan periode per tipe unit dengan CSV, sinkron dengan Standby Log dan Work Order. Perlu ditanyakan: apa masalah utama versi sekarang (tampilan, kecepatan, cara pakai)?
 7. **Timeline:** akan dibicarakan user (belum ada).
+8. **Akses per fitur (otorisasi):** tiap fitur punya level akses terpisah. Contoh: jadwal unit bisa **dilihat umum**, tapi **mengubah jadwal** hanya untuk user tertentu. Perlu diputuskan:
+   - Level akses per fitur: lihat saja, ubah, atau admin. Atau cukup lihat/ubah.
+   - Penyimpanan: kembangkan `hr.role_permissions` (kini hanya daftar `sections` per peran) atau buat tabel izin baru (fitur + aksi + peran). Ingat aturan migrasi: hanya menambah.
+   - Pengecualian per user: pakai ulang `hr.users.allowed_sections_override`, atau skema baru yang bisa membedakan lihat dan ubah.
+   - Penegakan: wajib dicek di **server** pada tiap endpoint, tidak cukup menyembunyikan tombol di web.
+   - Daftar fitur dan siapa yang boleh mengubah masing-masing (belum dicatat).
+9. **Penyimpanan sesi login:** sementara sesi disimpan di **memori server** (keputusan 2026-11-08, untuk pengembangan di staging). Konsekuensi: semua user logout tiap server restart/redeploy. **Wajib pindah ke tabel sesi di DB sebelum v2 dipakai user sungguhan di live.**
 
 ## Langkah menyiapkan project v2
 1. Buat repo kosong di GitHub (tanpa README/.gitignore). `gh` belum ter-install, pakai browser.
