@@ -19,6 +19,8 @@ export type ScheduleUnit = { unitId: string; unitType: string | null; active: bo
 export type Schedule = { from: string; to: string; days: string[]; units: ScheduleUnit[] }
 
 export type FormOptions = {
+  rcTypes: string[]
+  defaults: { unitType: string; rcType: string; time: number | null; volume: number | null; pipe: number | null }[]
   operators: { employeeId: string; name: string }[]
   units: { unitId: string; unitType: string | null }[]
   contracts: { rcId: string; rcType: string | null; location: string | null; status: string | null }[]

@@ -96,7 +96,7 @@ recordsRouter.get(
     const perms = await loadPermissions(req.session.userId);
     if (!CREATE_KEYS.some((k) => can(perms, k))) throw new HttpError(403, "Anda tidak punya izin untuk aksi ini");
 
-    const [units, contracts, operators] = await Promise.all([
+    const [units, contracts, operators, defaults] = await Promise.all([
       db.execute<{ unit_id: string; unit_type: string | null }>(
         sql`select unit_id, unit_type from rental.unit where status = 'active' order by unit_type, unit_id`,
       ),
@@ -107,8 +107,15 @@ recordsRouter.get(
         sql`select employee_id, full_name from hr.employee
             where lower(role) = 'operator' and is_active order by full_name`,
       ),
+      db.execute<{ unit_type: string; rc_type: string; wo_time: number | null; wo_volume: number | null; rc_pipe: number | null }>(
+        sql`select unit_type, rc_type, wo_time, wo_volume, rc_pipe from rental.unit_price_default
+            where unit_type is not null and rc_type is not null order by rc_type, unit_type`,
+      ),
     ]);
     res.json({
+      // Tipe work order = rc_type yang ada di unit_price_default. Nilai awal time/volume/pipe diambil dari tabel yang sama.
+      rcTypes: [...new Set(defaults.rows.map((d) => d.rc_type))],
+      defaults: defaults.rows.map((d) => ({ unitType: d.unit_type, rcType: d.rc_type, time: d.wo_time, volume: d.wo_volume, pipe: d.rc_pipe })),
       operators: operators.rows.map((o) => ({ employeeId: o.employee_id, name: o.full_name })),
       units: units.rows.map((u) => ({ unitId: u.unit_id, unitType: u.unit_type })),
       contracts: contracts.rows.map((c) => ({ rcId: c.rc_id, rcType: c.rc_type, location: c.location, status: c.status })),
@@ -117,12 +124,10 @@ recordsRouter.get(
 );
 
 // ---------- Work order ----------
-export const RC_TYPES = ["Retail", "Contract", "Standby", "Work-maintenance"] as const;
-
 const workOrderBody = z.object({
   operatorId: z.string().uuid("Operator wajib dipilih"),
   unitId: text(100).min(1, "Unit wajib dipilih"),
-  rcType: z.enum(RC_TYPES, { message: "Tipe work order tidak valid" }),
+  rcType: text(100).min(1, "Tipe work order wajib dipilih"),
   location: text(500).min(1, "Lokasi wajib diisi"),
   startDate: isoDate,
   finishDate: isoDate.optional(),
@@ -145,6 +150,8 @@ recordsRouter.post(
 
     const result = await db.transaction(async (tx) => {
       const unit = await activeUnit(tx, b.unitId);
+      const rt = await tx.execute(sql`select 1 from rental.unit_price_default where rc_type = ${b.rcType} limit 1`);
+      if (rt.rows.length === 0) throw new HttpError(400, "Tipe work order tidak valid");
       // Operator harus karyawan aktif ber-role operator. Nama operator juga disimpan di kolom "user" (kompatibel dengan v1).
       const op = await tx.execute<{ full_name: string }>(
         sql`select full_name from hr.employee where employee_id = ${b.operatorId}::uuid and lower(role) = 'operator' and is_active`,

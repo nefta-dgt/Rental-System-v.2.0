@@ -9,7 +9,7 @@ Catatan ini mencatat aturan setiap endpoint server v2. **Wajib diperbarui setiap
 - Semua perubahan data dicatat di `access.audit_log`.
 - Kolom `rental.work_order.created_by` baru ada di staging, jadi endpoint pembuat WO belum bisa jalan di live (lihat Planning).
 
-Terakhir diperbarui: 2026-11-09.
+Terakhir diperbarui: 2026-11-09 (tipe work order dan nilai awal time/volume/pipe dari `unit_price_default`).
 
 ---
 
@@ -46,7 +46,9 @@ Terakhir diperbarui: 2026-11-09.
 
 ### GET `/api/form-options`
 - Izin: login dan salah satu dari `work_order:create`, `maintenance:create`, `standby:create`.
-- Sukses `200`: `{ operators[], units[], contracts[] }`.
+- Sukses `200`: `{ rcTypes[], defaults[], operators[], units[], contracts[] }`.
+  - `rcTypes`: daftar tipe work order = nilai `rc_type` yang ada di `rental.unit_price_default` (saat ini Contract, Mass Concrete, Retail).
+  - `defaults`: `{ unitType, rcType, time, volume, pipe }` dari `unit_price_default` (`wo_time`, `wo_volume`, `rc_pipe`). Form memakainya sebagai nilai awal; user tetap bisa mengubahnya. Pencocokan `unit_type` tidak peka huruf besar/kecil (`rental.unit` memakai `MINI`, tabel default memakai `Mini`).
   - `operators`: `{ employeeId, name }` dari `hr.employee` dengan `lower(role) = 'operator'` dan `is_active`, urut nama.
   - `units`: `{ unitId, unitType }`, hanya unit berstatus `active`.
   - `contracts`: `{ rcId, rcType, location, status }`, 200 terbaru menurut `rc_start_date`.
@@ -63,7 +65,7 @@ Terakhir diperbarui: 2026-11-09.
 |---|---|
 | `operatorId` | wajib, UUID karyawan; harus aktif dan ber-role operator (disimpan ke kolom `operator`) |
 | `unitId` | wajib; unit harus ada dan `active` |
-| `rcType` | wajib: `Retail`, `Contract`, `Standby`, atau `Work-maintenance` |
+| `rcType` | wajib; harus salah satu `rc_type` di `rental.unit_price_default` (lihat `rcTypes` di `/api/form-options`) |
 | `location` | wajib, maks 500 karakter |
 | `startDate` | wajib, `YYYY-MM-DD`, antara 2020-01-01 dan 2100-12-31 |
 | `finishDate` | opsional; kosong → sama dengan `startDate`; tidak boleh sebelum `startDate` |

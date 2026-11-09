@@ -1,10 +1,8 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { api, type WorkOrderCreated } from '../../api'
 import Dropdown from '../../components/Dropdown'
 import { Field, FormCard, Result, SubmitButton, UnitPicker, inputClass, readOnlyClass, shiftIso, todayIso, useFormOptions } from './shared'
-
-const RC_TYPES = ['Retail', 'Contract', 'Standby', 'Work-maintenance']
 
 type Errors = Partial<Record<'operator' | 'unit' | 'location' | 'start' | 'finish', string>>
 
@@ -12,7 +10,7 @@ export default function WorkOrderForm() {
   const { data: options } = useFormOptions()
   const [operatorId, setOperatorId] = useState('')
   const [unitId, setUnitId] = useState('')
-  const [rcType, setRcType] = useState('Retail')
+  const [rcType, setRcType] = useState('')
   const [location, setLocation] = useState('')
   const [startDate, setStartDate] = useState(todayIso())
   const [finishDate, setFinishDate] = useState('')
@@ -25,8 +23,27 @@ export default function WorkOrderForm() {
   const [errors, setErrors] = useState<Errors>({})
   const [created, setCreated] = useState<WorkOrderCreated | null>(null)
 
+  useEffect(() => {
+    if (!rcType && options?.rcTypes.length) setRcType(options.rcTypes.includes('Retail') ? 'Retail' : options.rcTypes[0])
+  }, [options, rcType])
+
   const operatorOptions = useMemo(() => (options?.operators ?? []).map((o) => ({ value: o.employeeId, label: o.name })), [options])
   const unitType = useMemo(() => options?.units.find((u) => u.unitId === unitId)?.unitType ?? '', [options, unitId])
+
+  const rcTypeOptions = useMemo(() => (options?.rcTypes ?? []).map((t) => ({ value: t, label: t })), [options])
+
+  // Nilai awal time/volume/pipe dari unit_price_default (unit_type + tipe work order). Hanya menimpa kolom yang belum diubah user.
+  const touched = useRef({ time: false, volume: false, pipe: false })
+  const unitDefault = useMemo(
+    () => (unitType ? options?.defaults.find((d) => d.rcType === rcType && d.unitType.toLowerCase() === unitType.toLowerCase()) : undefined),
+    [options, unitType, rcType],
+  )
+  useEffect(() => {
+    const str = (n: number | null | undefined) => (n == null ? '' : String(n))
+    if (!touched.current.time) setTime(str(unitDefault?.time))
+    if (!touched.current.volume) setVolume(str(unitDefault?.volume))
+    if (!touched.current.pipe) setPipe(str(unitDefault?.pipe))
+  }, [unitDefault])
 
   const contractOptions = useMemo(
     () => [{ value: '', label: '(kosong)' }, ...(options?.contracts ?? []).map((c) => ({ value: c.rcId, label: c.rcId, hint: c.rcType ?? '' }))],
@@ -55,9 +72,7 @@ export default function WorkOrderForm() {
       setUnitId('')
       setLocation('')
       setFinishDate('')
-      setTime('')
-      setVolume('')
-      setPipe('')
+      touched.current = { time: false, volume: false, pipe: false }
       setRcId('')
       setRemarks('')
     },
@@ -100,7 +115,7 @@ export default function WorkOrderForm() {
         </Field>
 
         <Field label="Tipe Work Order">
-          <Dropdown value={rcType} onChange={setRcType} label="Tipe work order" options={RC_TYPES.map((t) => ({ value: t, label: t }))} />
+          <Dropdown value={rcType} onChange={setRcType} label="Tipe work order" options={rcTypeOptions} />
         </Field>
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -134,13 +149,13 @@ export default function WorkOrderForm() {
             <input type="number" min={0} max={999} step={1} value={qty} onChange={(e) => setQty(e.target.value)} className={inputClass} />
           </Field>
           <Field label="Time" optional>
-            <input type="number" min={0} step={1} value={time} onChange={(e) => setTime(e.target.value)} className={inputClass} />
+            <input type="number" min={0} step={1} value={time} onChange={(e) => { touched.current.time = true; setTime(e.target.value) }} className={inputClass} />
           </Field>
           <Field label="Volume" optional>
-            <input type="number" min={0} step="any" value={volume} onChange={(e) => setVolume(e.target.value)} className={inputClass} />
+            <input type="number" min={0} step="any" value={volume} onChange={(e) => { touched.current.volume = true; setVolume(e.target.value) }} className={inputClass} />
           </Field>
           <Field label="Pipe" optional>
-            <input value={pipe} onChange={(e) => setPipe(e.target.value)} placeholder="10" maxLength={100} className={inputClass} />
+            <input value={pipe} onChange={(e) => { touched.current.pipe = true; setPipe(e.target.value) }} placeholder="10" maxLength={100} className={inputClass} />
           </Field>
         </div>
 
