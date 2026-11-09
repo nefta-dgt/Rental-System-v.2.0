@@ -1,8 +1,12 @@
-import { useMe } from '../auth'
+import { useCan, useMe } from '../auth'
+import Schedule from './Schedule'
 
+// Beranda = jadwal unit (sorotan utama). User tanpa izin schedule:view melihat halaman sambutan.
 export default function Home() {
   const { data: me } = useMe()
+  const can = useCan()
   if (!me) return null
+  if (can('schedule:view')) return <Schedule />
   const allAccess = me.sections.includes('*')
 
   return (

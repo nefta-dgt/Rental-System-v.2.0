@@ -7,6 +7,10 @@ import Dropdown from '../../components/Dropdown'
 export const inputClass =
   'w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm outline-none transition-colors hover:border-slate-400 focus:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-500/40'
 
+// Kolom read-only (otomatis): abu-abu, tanpa efek hover/fokus, supaya jelas tidak bisa diisi.
+export const readOnlyClass =
+  'w-full cursor-default rounded-lg border border-slate-200 bg-slate-100 px-3 py-1.5 text-sm text-slate-500 outline-none'
+
 export const MAX_RANGE_DAYS = 31
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -44,9 +48,14 @@ export function useFormOptions() {
   return useQuery({ queryKey: ['form-options'], queryFn: api.formOptions, staleTime: 5 * 60_000 })
 }
 
-export function UnitPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+// current: unit yang sudah tersimpan di WO yang sedang diedit (bisa saja sudah nonaktif, jadi tidak ada di daftar unit aktif).
+export function UnitPicker({ value, onChange, current }: { value: string; onChange: (v: string) => void; current?: { unitId: string; unitType: string | null } }) {
   const { data, isPending, error } = useFormOptions()
-  const options = useMemo(() => (data?.units ?? []).map((u) => ({ value: u.unitId, label: u.unitId, hint: u.unitType ?? '' })), [data])
+  const options = useMemo(() => {
+    const list = (data?.units ?? []).map((u) => ({ value: u.unitId, label: u.unitId, hint: u.unitType ?? '' }))
+    if (current && !list.some((o) => o.value === current.unitId)) list.unshift({ value: current.unitId, label: current.unitId, hint: current.unitType ?? '' })
+    return list
+  }, [data, current])
   if (error) return <p className="text-sm text-red-600">Gagal memuat daftar unit. Muat ulang halaman.</p>
   return <Dropdown value={value} onChange={onChange} options={options} label="Unit" placeholder={isPending ? 'Memuat unit...' : 'Pilih unit'} searchable />
 }
@@ -70,7 +79,7 @@ export function Result({ kind, children, linkFrom, linkTo }: { kind: 'success' |
       {children}
       {ok && linkFrom && (
         <div className="mt-2">
-          <Link to={`/schedule?from=${linkFrom}&to=${linkTo ?? linkFrom}`} className="font-medium underline">
+          <Link to={`/?from=${linkFrom}&to=${linkTo ?? linkFrom}`} className="font-medium underline">
             Lihat di jadwal
           </Link>
         </div>

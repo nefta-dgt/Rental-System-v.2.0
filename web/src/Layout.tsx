@@ -1,14 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { api } from './api'
 import { meKey, useCan, useMe } from './auth'
-
-const SUB_ITEMS = [
-  { to: '/schedule/work-order', label: 'Work Order', permission: 'work_order:create' },
-  { to: '/schedule/maintenance', label: 'Maintenance', permission: 'maintenance:create' },
-  { to: '/schedule/standby', label: 'Standby', permission: 'standby:create' },
-]
+import { activeSection, isTabActive, resolveTo, sectionLanding, visibleMenu, visibleTabs } from './menu'
 
 const initials = (name: string) =>
   name
@@ -18,8 +13,8 @@ const initials = (name: string) =>
     .map((w) => w[0].toUpperCase())
     .join('')
 
-const itemClass =({ isActive }: { isActive: boolean }) =>
-  `block rounded-lg px-3 py-2 text-sm ${isActive ? 'bg-blue-50 font-medium text-blue-700' : 'text-slate-600 hover:bg-slate-100'}`
+const itemClass = (active: boolean) =>
+  `block rounded-lg px-3 py-2 text-sm ${active ? 'bg-blue-50 font-medium text-blue-700' : 'text-slate-600 hover:bg-slate-100'}`
 
 export default function Layout() {
   const { data: me } = useMe()
@@ -28,12 +23,8 @@ export default function Layout() {
   const { pathname } = useLocation()
   const queryClient = useQueryClient()
   const [drawer, setDrawer] = useState(false)
-  const [scheduleOpen, setScheduleOpen] = useState(pathname.startsWith('/schedule'))
 
-  useEffect(() => {
-    setDrawer(false)
-    if (pathname.startsWith('/schedule')) setScheduleOpen(true)
-  }, [pathname])
+  useEffect(() => setDrawer(false), [pathname])
 
   const logout = useMutation({
     mutationFn: api.logout,
@@ -45,9 +36,8 @@ export default function Layout() {
 
   if (!me) return null
 
-  const subItems = SUB_ITEMS.filter((s) => can(s.permission))
-  const canSchedule = can('schedule:view')
-  const showSchedule = canSchedule || subItems.length > 0
+  const section = activeSection(pathname)
+  const tabs = section ? visibleTabs(section, can) : []
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -59,46 +49,21 @@ export default function Layout() {
       >
         <div className="px-5 py-4 font-semibold text-slate-900">Rental System v2</div>
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-4">
-          <NavLink to="/" end className={itemClass}>
+          <NavLink to="/" end className={({ isActive }) => itemClass(isActive)}>
             Beranda
           </NavLink>
 
-          {showSchedule && (
-            <div>
-              <div className="flex items-center gap-1">
-                {canSchedule ? (
-                  <NavLink to="/schedule" end className={(s) => `${itemClass(s)} flex-1`}>
-                    Jadwal Unit
-                  </NavLink>
-                ) : (
-                  <span className="flex-1 px-3 py-2 text-sm text-slate-600">Jadwal Unit</span>
-                )}
-                {subItems.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setScheduleOpen((o) => !o)}
-                    aria-expanded={scheduleOpen}
-                    aria-label={scheduleOpen ? 'Tutup submenu Jadwal Unit' : 'Buka submenu Jadwal Unit'}
-                    className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"
-                  >
-                    <svg viewBox="0 0 20 20" className={`h-4 w-4 transition-transform ${scheduleOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="m5 8 5 5 5-5" />
-                    </svg>
-                  </button>
-                )}
+          {visibleMenu(can).map((m) =>
+            m.soon ? (
+              <div key={m.key} aria-disabled="true" title="Segera hadir" className="flex cursor-not-allowed items-center justify-between rounded-lg px-3 py-2 text-sm text-slate-400">
+                <span>{m.label}</span>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-400">Segera</span>
               </div>
-              {scheduleOpen && subItems.length > 0 && (
-                <ul className="ml-4 mt-1 space-y-1 border-l border-slate-200 pl-2">
-                  {subItems.map((s) => (
-                    <li key={s.to}>
-                      <NavLink to={s.to} className={itemClass}>
-                        {s.label}
-                      </NavLink>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+            ) : (
+              <Link key={m.key} to={sectionLanding(m, can)} aria-current={section?.key === m.key ? 'page' : undefined} className={itemClass(section?.key === m.key)}>
+                {m.label}
+              </Link>
+            ),
           )}
         </nav>
 
@@ -125,13 +90,33 @@ export default function Layout() {
       </aside>
 
       <div className="md:pl-60">
-        <header className="flex items-center bg-white px-3 py-3 shadow-sm md:hidden">
-          <button type="button" onClick={() => setDrawer(true)} aria-label="Buka menu" className="rounded-lg p-2 text-slate-600 hover:bg-slate-100">
-            <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-              <path d="M3 5h14M3 10h14M3 15h14" />
-            </svg>
-          </button>
-          <span className="ml-2 font-semibold text-slate-900">Rental System v2</span>
+        {/* Header mengikuti menu utama yang aktif: judul bagian, lalu tab sub menunya. */}
+        <header className="sticky top-0 z-20 border-b border-slate-200 bg-white">
+          <div className="flex items-center gap-2 px-3 py-3 sm:px-6">
+            <button type="button" onClick={() => setDrawer(true)} aria-label="Buka menu" className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 md:hidden">
+              <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+                <path d="M3 5h14M3 10h14M3 15h14" />
+              </svg>
+            </button>
+            <div className="font-semibold text-slate-900">{section?.label ?? (pathname === '/' ? (can('schedule:view') ? 'Jadwal Unit' : 'Beranda') : 'Rental System v2')}</div>
+          </div>
+          {section && tabs.length > 0 && (
+            <nav aria-label={`Sub menu ${section.label}`} className="flex gap-1 overflow-x-auto px-3 sm:px-6">
+              {tabs.map((t) => {
+                const active = isTabActive(t, pathname, can)
+                return (
+                  <Link
+                    key={t.label}
+                    to={resolveTo(t, can)}
+                    aria-current={active ? 'page' : undefined}
+                    className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm ${active ? 'border-blue-600 font-medium text-blue-700' : 'border-transparent text-slate-600 hover:border-slate-300 hover:text-slate-900'}`}
+                  >
+                    {t.label}
+                  </Link>
+                )
+              })}
+            </nav>
+          )}
         </header>
         <Outlet />
       </div>
