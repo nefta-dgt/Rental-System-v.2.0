@@ -61,7 +61,7 @@ export type WorkOrderRow = {
   remarks: string | null
 }
 export type WorkOrderList = { items: WorkOrderRow[]; total: number; page: number; pageSize: number }
-export type WorkOrderFilter = { q?: string; rcType?: string; from?: string; to?: string; page?: number; pageSize?: number }
+export type WorkOrderFilter = { q?: string; unitId?: string; operator?: string; rcType?: string; date?: string; page?: number; pageSize?: number }
 export type DayRecordCreated = { unitId: string; startDate: string; finishDate: string; count: number }
 
 export class ApiError extends Error {

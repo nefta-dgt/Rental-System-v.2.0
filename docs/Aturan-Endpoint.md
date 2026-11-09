@@ -9,7 +9,7 @@ Catatan ini mencatat aturan setiap endpoint server v2. **Wajib diperbarui setiap
 - Semua perubahan data dicatat di `access.audit_log`.
 - Kolom `rental.work_order.created_by` baru ada di staging, jadi endpoint pembuat WO belum bisa jalan di live (lihat Planning).
 
-Terakhir diperbarui: 2026-11-09 (item work order kini memuat `timestamp` dan `createdByName`).
+Terakhir diperbarui: 2026-11-09 (filter daftar work order: `unitId`, `operator`, `date`; item memuat `timestamp` dan `createdByName`).
 
 ---
 
@@ -87,10 +87,16 @@ Terakhir diperbarui: 2026-11-09 (item work order kini memuat `timestamp` dan `cr
 
 ### GET `/api/work-orders`
 - Izin: `work_order:view`.
-- Query (semua opsional): `q` (maks 100 karakter; dicari tidak peka huruf besar/kecil di nomor WO, unit, nama operator, location, RC id, remarks), `rcType`, `from` dan `to` (`YYYY-MM-DD`; WO ikut jika rentang tanggalnya beririsan), `page` (default 1), `pageSize` (default 25, maks 100).
-- Urutan: tanggal mulai terbaru dulu. `to` tidak boleh sebelum `from`.
+- Query (semua opsional, digabung dengan AND; semua teks tidak peka huruf besar/kecil dan cocok sebagian):
+  - `q` (maks 100): nomor WO, location, RC id, remarks.
+  - `unitId` (maks 100): ID unit.
+  - `operator` (maks 100): nama operator (dari `hr.employee`, cadangan kolom `user`).
+  - `rcType`: tipe work order (persis).
+  - `date` (`YYYY-MM-DD`): hanya WO yang periodenya mencakup tanggal itu, yaitu `wo_start_date <= date <= wo_finish_date` (finish kosong dianggap sama dengan start).
+  - `page` (default 1), `pageSize` (default 25, maks 100).
+- Urutan: tanggal mulai terbaru dulu. Parameter `from` dan `to` yang lama sudah diganti oleh `date`.
 - Sukses `200`: `{ items[], total, page, pageSize }`. Tiap item: `id, timestamp, createdByName, operatorId, operatorName, unitId, unitType, rcType, rcId, location, startDate, finishDate, qty, time, volume, pipe, remarks`. Tanggal berbentuk teks `YYYY-MM-DD`. `timestamp` = waktu WO dibuat (teks dari database); `createdByName` = nama akun (`hr.users.employee_name`) dari `created_by`, `null` untuk WO dari v1/bot. `operatorName` berasal dari `hr.employee` lewat kolom `operator`, bukan kolom `user`.
-- Error: `400` (format tanggal/rentang salah), `401`, `403`.
+- Error: `400` (format tanggal salah), `401`, `403`.
 
 ### GET `/api/work-orders/:id`
 - Izin: `work_order:view`. Sukses `200`: satu item seperti di atas. Error: `404` jika tidak ada.

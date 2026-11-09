@@ -225,8 +225,9 @@ recordsRouter.post(
 const listQuery = z.object({
   q: z.string().trim().max(100).optional(),
   rcType: z.string().trim().max(100).optional(),
-  from: isoDate.optional(),
-  to: isoDate.optional(),
+  unitId: z.string().trim().max(100).optional(),
+  operator: z.string().trim().max(100).optional(),
+  date: isoDate.optional(),
   page: z.coerce.number().int().min(1).max(100000).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });
@@ -254,17 +255,16 @@ recordsRouter.get(
   handle(async (req, res) => {
     const f = listQuery.parse(req.query);
     const conds = [sql`true`];
+    const like = (v: string) => `%${v.replace(/[\\%_]/g, "\\$&")}%`;
     if (f.q) {
-      const like = `%${f.q.replace(/[\\%_]/g, "\\$&")}%`;
-      conds.push(
-        sql`(w.wo_id ilike ${like} or w.unit_id ilike ${like} or coalesce(e.full_name, w."user") ilike ${like}
-             or w.location ilike ${like} or w.rc_id ilike ${like} or w.remarks ilike ${like})`,
-      );
+      const l = like(f.q);
+      conds.push(sql`(w.wo_id ilike ${l} or w.location ilike ${l} or w.rc_id ilike ${l} or w.remarks ilike ${l})`);
     }
+    if (f.unitId) conds.push(sql`w.unit_id ilike ${like(f.unitId)}`);
+    if (f.operator) conds.push(sql`coalesce(e.full_name, w."user") ilike ${like(f.operator)}`);
     if (f.rcType) conds.push(sql`w.rc_type = ${f.rcType}`);
-    if (f.from) conds.push(sql`coalesce(w.wo_finish_date, w.wo_start_date) >= ${f.from}::date`);
-    if (f.to) conds.push(sql`w.wo_start_date <= ${f.to}::date`);
-    if (f.from && f.to && f.to < f.from) throw new HttpError(400, "Tanggal sampai tidak boleh sebelum tanggal dari");
+    // WO ikut jika tanggal yang dicari berada di dalam periodenya: start <= tanggal <= finish.
+    if (f.date) conds.push(sql`w.wo_start_date <= ${f.date}::date and coalesce(w.wo_finish_date, w.wo_start_date) >= ${f.date}::date`);
     const where = sql.join(conds, sql` and `);
 
     const [total, rows] = await Promise.all([
