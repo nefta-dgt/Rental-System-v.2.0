@@ -78,3 +78,20 @@ Folder dengan nama "Rental System v.2.0" di Desktop ini hanya tempat catatan, be
 ## Catatan kecil
 - **Singkatan yang tetap kapital** (PT, CV, KM, RT, RW, dll.) ada di `web/src/text.ts`, konstanta `ACRONYMS`. Dipakai fungsi `properCase()` yang mengubah teks KAPITAL jadi huruf besar-kecil biasa (jadwal; Operator dan Location di Daftar Work Order). Kalau ada kata yang salah (mis. "Rt", "Cv"), tambahkan kata itu dengan huruf besar ke daftar. Perubahan kode, jadi web perlu di-build ulang dan dipasang. Data di database tidak diubah.
 - **Migrasi `created_by` untuk maintenance dan standby (2026-11-10):** `server/migrations/2026-11-10_day_records_created_by.sql` (+ rollback) menambah kolom `created_by` (uuid, nullable, FK ke `hr.users`) ke `rental.maintenance` dan `rental.standby_log`. Baru dijalankan di staging; **belum di live**. Sama seperti `work_order.created_by`: nullable tanpa default, insert dari v1 tidak terpengaruh; di staging tidak ada trigger, view, atau FK yang memakai kedua tabel ini (dicek 2026-11-10; belum dicek di live). Sampai dijalankan di live, endpoint buat dan daftar maintenance/standby v2 akan error di live. Jalankan bersama migrasi izin `maintenance:view`/`standby:view`.
+
+## Open list: migrasi yang BELUM dijalankan di live (dicek 2026-11-10)
+Semua migrasi di `server/migrations/` baru dijalankan di staging lokal (`company_staging`). Live (`company`) belum disentuh (keputusan user). Dicek read-only: skema `access` belum ada di live, jadi v2 belum bisa dipasang ke live sebelum migrasi ini dijalankan.
+
+Urutan kalau nanti dijalankan (tiap file punya `.rollback.sql`; backup dulu, saat sepi, staging dulu):
+1. `2026-11-08_create_access_schema.sql`: skema `access` (permission, role/user permission, audit log, sesi login). **Belum ada di live.**
+2. `2026-11-08_add_create_permissions.sql`: izin `work_order:create`, `maintenance:create`, `standby:create`.
+3. `2026-11-09_add_work_order_view_edit_delete_permissions.sql`: izin `work_order:view/edit/delete`.
+4. `2026-11-10_add_maintenance_standby_view_permissions.sql`: izin `maintenance:view`, `standby:view`.
+5. `2026-11-08_work_order_created_by.sql`: kolom `rental.work_order.created_by`.
+6. `2026-11-10_day_records_created_by.sql`: kolom `created_by` di `rental.maintenance` dan `rental.standby_log` (live dicek: tanpa trigger, view, FK masuk, atau fungsi DB yang memakainya).
+7. Belum dibuat: hapus kolom `rental.work_order.user` (lihat catatan di atas; tidak bisa dibatalkan, jangan bersamaan dengan langkah 5).
+
+Catatan:
+- Sebelum migrasi dijalankan, kode v2 yang dipasang ke live akan error (login, daftar, buat). Jalankan migrasi dulu, baru pasang kode.
+- Setelah langkah 1 sampai 4, role selain Superadmin belum punya izin apa pun; isi `access.role_permission` dulu (pembagian peran belum diputuskan).
+- Belum dicek: kode v1/n8n yang memakai `SELECT *` atau `INSERT` tanpa daftar kolom pada tabel yang ditambah kolom.
