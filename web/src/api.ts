@@ -62,6 +62,9 @@ export type WorkOrderRow = {
 }
 export type WorkOrderList = { items: WorkOrderRow[]; total: number; page: number; pageSize: number }
 export type WorkOrderFilter = { q?: string; unitId?: string; operator?: string; rcType?: string; date?: string; page?: number; pageSize?: number }
+export type DayRecordRow = { id: number; unitId: string; unitType: string | null; date: string; createdAt: string | null; note: string | null }
+export type DayRecordList = { items: DayRecordRow[]; total: number; page: number; pageSize: number }
+export type DayRecordFilter = { q?: string; unitId?: string; date?: string; page?: number; pageSize?: number }
 export type DayRecordCreated = { unitId: string; startDate: string; finishDate: string; count: number }
 
 export class ApiError extends Error {
@@ -104,6 +107,11 @@ export const api = {
   updateWorkOrder: (id: string, b: WorkOrderInput) =>
     request<WorkOrderCreated>(`/api/work-orders/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(b) }),
   deleteWorkOrder: (id: string) => request<{ ok: boolean; id: string }>(`/api/work-orders/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  listDayRecords: (kind: 'maintenance' | 'standby', f: DayRecordFilter) => {
+    const qs = new URLSearchParams()
+    Object.entries(f).forEach(([k, v]) => v !== undefined && v !== '' && qs.set(k, String(v)))
+    return request<DayRecordList>(`/api/${kind}?${qs}`)
+  },
   createMaintenance: (b: DayRecordInput) => request<DayRecordCreated>('/api/maintenance', { method: 'POST', body: JSON.stringify(b) }),
   createStandby: (b: DayRecordInput) => request<DayRecordCreated>('/api/standby', { method: 'POST', body: JSON.stringify(b) }),
   schedule: (from: string, to: string) =>

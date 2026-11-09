@@ -16,3 +16,21 @@ export function properCase(text: string): string {
     return w[0] + w.slice(1).toLowerCase()
   })
 }
+
+// Timestamp dari server berbentuk teks "YYYY-MM-DD HH:MM:SS..." atau ISO; tampilkan sampai menit.
+export const formatTimestamp = (t: string | null) => (t ? t.replace('T', ' ').slice(0, 16) : '')
+
+const MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
+// "2026-11-09" -> "November, 09 2026" (mmmm, dd yyyy).
+export const formatDate = (iso: string | null) => {
+  const m = iso?.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  return m ? `${MONTHS[Number(m[2]) - 1]}, ${m[3]} ${m[1]}` : (iso ?? '')
+}
+
+// Judul pemisah per tanggal mulai, mis. "Senin, 9 Nov 2026".
+export const dayLabel = (iso: string | null) => {
+  if (!iso) return 'Tanpa tanggal'
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })
+}
+

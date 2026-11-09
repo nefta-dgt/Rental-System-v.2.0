@@ -4,6 +4,7 @@ import { RequireAuth, RequirePermission } from './auth'
 import Layout from './Layout'
 import Home from './pages/Home'
 import Login from './pages/Login'
+import DayRecordList from './pages/records/DayRecordList'
 import DayRecordForm from './pages/records/DayRecordForm'
 import WorkOrderForm from './pages/records/WorkOrderForm'
 import WorkOrderList from './pages/records/WorkOrderList'
@@ -36,11 +37,17 @@ export default function App() {
               <Route element={<RequirePermission permission="work_order:edit" />}>
                 <Route path="/schedule/work-order/:id/edit" element={<WorkOrderForm />} />
               </Route>
+              <Route element={<RequirePermission permission="maintenance:view" />}>
+                <Route path="/schedule/maintenance" element={<DayRecordList kind="maintenance" />} />
+              </Route>
               <Route element={<RequirePermission permission="maintenance:create" />}>
-                <Route path="/schedule/maintenance" element={<DayRecordForm kind="maintenance" />} />
+                <Route path="/schedule/maintenance/new" element={<DayRecordForm kind="maintenance" />} />
+              </Route>
+              <Route element={<RequirePermission permission="standby:view" />}>
+                <Route path="/schedule/standby" element={<DayRecordList kind="standby" />} />
               </Route>
               <Route element={<RequirePermission permission="standby:create" />}>
-                <Route path="/schedule/standby" element={<DayRecordForm kind="standby" />} />
+                <Route path="/schedule/standby/new" element={<DayRecordForm kind="standby" />} />
               </Route>
             </Route>
           </Route>

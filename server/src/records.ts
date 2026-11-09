@@ -222,6 +222,8 @@ recordsRouter.post(
 );
 
 // ---------- Cari, lihat, ubah, hapus work order ----------
+const likePattern = (v: string) => `%${v.replace(/[\\%_]/g, "\\$&")}%`;
+
 const listQuery = z.object({
   q: z.string().trim().max(100).optional(),
   rcType: z.string().trim().max(100).optional(),
@@ -255,7 +257,7 @@ recordsRouter.get(
   handle(async (req, res) => {
     const f = listQuery.parse(req.query);
     const conds = [sql`true`];
-    const like = (v: string) => `%${v.replace(/[\\%_]/g, "\\$&")}%`;
+    const like = likePattern;
     if (f.q) {
       const l = like(f.q);
       conds.push(sql`(w.wo_id ilike ${l} or w.location ilike ${l} or w.rc_id ilike ${l} or w.remarks ilike ${l})`);
@@ -457,3 +459,47 @@ recordsRouter.post(
     res.status(201).json(result);
   }),
 );
+
+// ---------- Daftar maintenance dan standby (satu baris per unit per hari, sama seperti isi tabelnya) ----------
+const dayListQuery = z.object({
+  q: z.string().trim().max(100).optional(),
+  unitId: z.string().trim().max(100).optional(),
+  date: isoDate.optional(),
+  page: z.coerce.number().int().min(1).max(100000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+
+type DayRow = { id: number; unit_id: string; unit_type: string | null; date: string; created_at: string | null; note: string | null };
+const toDay = (r: DayRow) => ({ id: r.id, unitId: r.unit_id, unitType: r.unit_type, date: r.date, createdAt: r.created_at, note: r.note });
+
+// Maintenance: note = remarks. Standby: note = nama akun pembuat (kolom "user"). q mencari di note.
+const DAY_LISTS = {
+  maintenance: { table: sql`rental.maintenance`, note: sql`t.remarks`, view: "maintenance:view" },
+  standby: { table: sql`rental.standby_log`, note: sql`t."user"`, view: "standby:view" },
+} as const;
+
+for (const [kind, cfg] of Object.entries(DAY_LISTS)) {
+  recordsRouter.get(
+    `/${kind}`,
+    requirePermission(cfg.view),
+    handle(async (req, res) => {
+      const f = dayListQuery.parse(req.query);
+      const conds = [sql`true`];
+      if (f.q) conds.push(sql`${cfg.note} ilike ${likePattern(f.q)}`);
+      if (f.unitId) conds.push(sql`t.unit_id ilike ${likePattern(f.unitId)}`);
+      if (f.date) conds.push(sql`t.date = ${f.date}::date`);
+      const where = sql.join(conds, sql` and `);
+
+      const [total, rows] = await Promise.all([
+        db.execute<{ n: string }>(sql`select count(*) as n from ${cfg.table} t where ${where}`),
+        db.execute<DayRow>(
+          sql`select t.id, t.unit_id, u.unit_type, t.date::text as date, t.created_at::text as created_at, ${cfg.note} as note
+              from ${cfg.table} t left join rental.unit u on u.unit_id = t.unit_id
+              where ${where} order by t.date desc, t.id desc
+              limit ${f.pageSize} offset ${(f.page - 1) * f.pageSize}`,
+        ),
+      ]);
+      res.json({ items: rows.rows.map(toDay), total: Number(total.rows[0].n), page: f.page, pageSize: f.pageSize });
+    }),
+  );
+}

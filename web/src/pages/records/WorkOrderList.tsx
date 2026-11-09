@@ -4,27 +4,10 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { api, type WorkOrderFilter } from '../../api'
 import { useCan } from '../../auth'
 import Dropdown from '../../components/Dropdown'
-import { properCase } from '../../text'
+import { dayLabel, formatDate, formatTimestamp, properCase } from '../../text'
 import { Result, inputClass, useFormOptions } from './shared'
 
 const PAGE_SIZE = 25
-
-// Timestamp dari server berbentuk teks "YYYY-MM-DD HH:MM:SS..." atau ISO; tampilkan sampai menit.
-const formatTimestamp = (t: string | null) => (t ? t.replace('T', ' ').slice(0, 16) : '')
-
-const MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
-// "2026-11-09" -> "November, 09 2026" (mmmm, dd yyyy).
-const formatDate = (iso: string | null) => {
-  const m = iso?.match(/^(\d{4})-(\d{2})-(\d{2})/)
-  return m ? `${MONTHS[Number(m[2]) - 1]}, ${m[3]} ${m[1]}` : (iso ?? '')
-}
-
-// Judul pemisah per tanggal mulai, mis. "Senin, 9 Nov 2026".
-const dayLabel = (iso: string | null) => {
-  if (!iso) return 'Tanpa tanggal'
-  const [y, m, d] = iso.split('-').map(Number)
-  return new Date(y, m - 1, d).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })
-}
 
 const TYPE_COLORS: Record<string, string> = {
   Contract: 'bg-blue-50 text-blue-700 ring-blue-600/20',
@@ -92,14 +75,14 @@ export default function WorkOrderList() {
           e.preventDefault()
           set({ q: text.q.trim(), unitId: text.unitId.trim(), operator: text.operator.trim() })
         }}
-        className="grid gap-3 rounded-xl bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-[1fr_9rem_1fr_11rem_10rem_auto]"
+        className="grid gap-3 rounded-xl bg-white p-4 shadow-sm grid-cols-[minmax(0,1.4fr)_7rem_minmax(0,1fr)_11rem_10rem_auto] items-center"
       >
         <input value={text.q} onChange={(e) => setText({ ...text, q: e.target.value })} placeholder="Cari nomor WO, lokasi, RC id, catatan..." maxLength={100} aria-label="Cari" className={inputClass} />
         <input value={text.unitId} onChange={(e) => setText({ ...text, unitId: e.target.value })} placeholder="Unit ID" maxLength={100} aria-label="Unit ID" className={inputClass} />
         <input value={text.operator} onChange={(e) => setText({ ...text, operator: e.target.value })} placeholder="Operator" maxLength={100} aria-label="Operator" className={inputClass} />
         <Dropdown value={filter.rcType ?? ''} onChange={(v) => set({ rcType: v })} label="Tipe work order" options={typeOptions} />
         <input type="date" value={filter.date ?? ''} onChange={(e) => set({ date: e.target.value })} aria-label="Tanggal (WO yang berjalan pada tanggal ini)" title="Menampilkan WO yang periodenya mencakup tanggal ini" className={inputClass} />
-        <div className="flex gap-2">
+        <div className="flex gap-2 whitespace-nowrap">
           <button type="submit" className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700">
             Cari
           </button>
