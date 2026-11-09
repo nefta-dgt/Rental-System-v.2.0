@@ -98,7 +98,7 @@ export default function Layout() {
                 <path d="M3 5h14M3 10h14M3 15h14" />
               </svg>
             </button>
-            <div className="font-semibold text-slate-900">{section?.label ?? (pathname === '/' ? 'Beranda' : 'Rental System v2')}</div>
+            <div className="font-semibold text-slate-900">{section?.label ?? (pathname === '/' ? (can('schedule:view') ? 'Jadwal Unit' : 'Beranda') : 'Rental System v2')}</div>
           </div>
           {section && tabs.length > 0 && (
             <nav aria-label={`Sub menu ${section.label}`} className="flex gap-1 overflow-x-auto px-3 sm:px-6">

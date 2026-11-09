@@ -79,7 +79,7 @@ export function Result({ kind, children, linkFrom, linkTo }: { kind: 'success' |
       {children}
       {ok && linkFrom && (
         <div className="mt-2">
-          <Link to={`/schedule?from=${linkFrom}&to=${linkTo ?? linkFrom}`} className="font-medium underline">
+          <Link to={`/?from=${linkFrom}&to=${linkTo ?? linkFrom}`} className="font-medium underline">
             Lihat di jadwal
           </Link>
         </div>

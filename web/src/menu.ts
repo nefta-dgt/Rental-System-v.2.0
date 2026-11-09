@@ -31,7 +31,6 @@ export const MENU: MenuItem[] = [
     label: 'Penjadwalan',
     prefix: '/schedule',
     children: [
-      { label: 'Jadwal', to: '/schedule', anyOf: ['schedule:view'], exact: true },
       {
         label: 'Work Order',
         // Yang hanya boleh membuat langsung ke form; yang boleh melihat ke daftar.

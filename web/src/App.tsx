@@ -1,15 +1,20 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { RequireAuth, RequirePermission } from './auth'
 import Layout from './Layout'
 import Home from './pages/Home'
 import Login from './pages/Login'
-import Schedule from './pages/Schedule'
 import DayRecordForm from './pages/records/DayRecordForm'
 import WorkOrderForm from './pages/records/WorkOrderForm'
 import WorkOrderList from './pages/records/WorkOrderList'
 
 const queryClient = new QueryClient()
+
+// Alamat lama /schedule (termasuk ?from=&to=) dialihkan ke Beranda yang kini menampilkan jadwal.
+function ScheduleToHome() {
+  const { search } = useLocation()
+  return <Navigate to={`/${search}`} replace />
+}
 
 export default function App() {
   return (
@@ -20,9 +25,7 @@ export default function App() {
           <Route element={<RequireAuth />}>
             <Route element={<Layout />}>
               <Route path="/" element={<Home />} />
-              <Route element={<RequirePermission permission="schedule:view" />}>
-                <Route path="/schedule" element={<Schedule />} />
-              </Route>
+              <Route path="/schedule" element={<ScheduleToHome />} />
               <Route element={<RequirePermission permission="work_order:view" />}>
                 <Route path="/schedule/work-order" element={<WorkOrderList />} />
               </Route>
