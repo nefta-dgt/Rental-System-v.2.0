@@ -7,6 +7,7 @@ import Login from './pages/Login'
 import Schedule from './pages/Schedule'
 import DayRecordForm from './pages/records/DayRecordForm'
 import WorkOrderForm from './pages/records/WorkOrderForm'
+import WorkOrderList from './pages/records/WorkOrderList'
 
 const queryClient = new QueryClient()
 
@@ -24,6 +25,12 @@ export default function App() {
               </Route>
               <Route element={<RequirePermission permission="work_order:create" />}>
                 <Route path="/schedule/work-order" element={<WorkOrderForm />} />
+              </Route>
+              <Route element={<RequirePermission permission="work_order:view" />}>
+                <Route path="/schedule/work-order/list" element={<WorkOrderList />} />
+              </Route>
+              <Route element={<RequirePermission permission="work_order:edit" />}>
+                <Route path="/schedule/work-order/:id/edit" element={<WorkOrderForm />} />
               </Route>
               <Route element={<RequirePermission permission="maintenance:create" />}>
                 <Route path="/schedule/maintenance" element={<DayRecordForm kind="maintenance" />} />

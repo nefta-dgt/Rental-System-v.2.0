@@ -41,6 +41,25 @@ export type WorkOrderInput = {
 }
 export type DayRecordInput = { unitId: string; startDate: string; finishDate?: string; remarks?: string }
 export type WorkOrderCreated = { id: string; unitId: string; startDate: string; finishDate: string; warnings: string[] }
+export type WorkOrderRow = {
+  id: string
+  operatorId: string | null
+  operatorName: string | null
+  unitId: string | null
+  unitType: string | null
+  rcType: string | null
+  rcId: string | null
+  location: string | null
+  startDate: string | null
+  finishDate: string | null
+  qty: number | null
+  time: number | null
+  volume: number | null
+  pipe: string | null
+  remarks: string | null
+}
+export type WorkOrderList = { items: WorkOrderRow[]; total: number; page: number; pageSize: number }
+export type WorkOrderFilter = { q?: string; rcType?: string; from?: string; to?: string; page?: number; pageSize?: number }
 export type DayRecordCreated = { unitId: string; startDate: string; finishDate: string; count: number }
 
 export class ApiError extends Error {
@@ -74,6 +93,15 @@ export const api = {
   logout: () => request<{ ok: boolean }>('/api/logout', { method: 'POST' }),
   formOptions: () => request<FormOptions>('/api/form-options'),
   createWorkOrder: (b: WorkOrderInput) => request<WorkOrderCreated>('/api/work-orders', { method: 'POST', body: JSON.stringify(b) }),
+  listWorkOrders: (f: WorkOrderFilter) => {
+    const qs = new URLSearchParams()
+    Object.entries(f).forEach(([k, v]) => v !== undefined && v !== '' && qs.set(k, String(v)))
+    return request<WorkOrderList>(`/api/work-orders?${qs}`)
+  },
+  getWorkOrder: (id: string) => request<WorkOrderRow>(`/api/work-orders/${encodeURIComponent(id)}`),
+  updateWorkOrder: (id: string, b: WorkOrderInput) =>
+    request<WorkOrderCreated>(`/api/work-orders/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(b) }),
+  deleteWorkOrder: (id: string) => request<{ ok: boolean; id: string }>(`/api/work-orders/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   createMaintenance: (b: DayRecordInput) => request<DayRecordCreated>('/api/maintenance', { method: 'POST', body: JSON.stringify(b) }),
   createStandby: (b: DayRecordInput) => request<DayRecordCreated>('/api/standby', { method: 'POST', body: JSON.stringify(b) }),
   schedule: (from: string, to: string) =>

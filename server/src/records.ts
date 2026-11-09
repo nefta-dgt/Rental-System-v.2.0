@@ -66,10 +66,10 @@ async function activeUnit(tx: Tx, unitId: string) {
   return unit;
 }
 
-async function audit(tx: Tx, userId: string, key: string, entity: string, entityId: string, after: unknown) {
+async function audit(tx: Tx, userId: string, key: string, entity: string, entityId: string, after: unknown, before: unknown = null) {
   await tx.execute(
     sql`insert into access.audit_log (user_id, permission_key, entity, entity_id, before, after)
-        values (${userId}::uuid, ${key}, ${entity}, ${entityId}, null, ${JSON.stringify(after)}::jsonb)`,
+        values (${userId}::uuid, ${key}, ${entity}, ${entityId}, ${before === null ? null : JSON.stringify(before)}::jsonb, ${after === null ? null : JSON.stringify(after)}::jsonb)`,
   );
 }
 
@@ -139,6 +139,55 @@ const workOrderBody = z.object({
   rcId: optionalText(50),
 });
 
+type WorkOrderInput = z.infer<typeof workOrderBody>;
+type Existing = { operatorId: string | null; unitId: string | null; rcType: string | null; rcId: string | null };
+
+// Validasi isi work order. Untuk ubah data, nilai yang tidak diganti tidak dicek ulang
+// (WO lama boleh punya tipe/operator/unit yang sekarang sudah tidak ada di daftar pilihan).
+async function validateWorkOrder(tx: Tx, b: WorkOrderInput, existing?: Existing) {
+  const unitChanged = !existing || existing.unitId !== b.unitId;
+  const unit = unitChanged
+    ? await activeUnit(tx, b.unitId)
+    : (await tx.execute<{ unit_id: string; unit_type: string | null }>(sql`select unit_id, unit_type from rental.unit where unit_id = ${b.unitId}`)).rows[0];
+  if (!unit) throw new HttpError(400, `Unit ${b.unitId} tidak ditemukan`);
+
+  if (!existing || existing.rcType !== b.rcType) {
+    const rt = await tx.execute(sql`select 1 from rental.unit_price_default where rc_type = ${b.rcType} limit 1`);
+    if (rt.rows.length === 0) throw new HttpError(400, "Tipe work order tidak valid");
+  }
+
+  // Operator harus karyawan aktif ber-role operator. Nama operator juga disimpan di kolom "user" (kompatibel dengan v1).
+  const opChanged = !existing || existing.operatorId !== b.operatorId;
+  const op = await tx.execute<{ full_name: string }>(
+    opChanged
+      ? sql`select full_name from hr.employee where employee_id = ${b.operatorId}::uuid and lower(role) = 'operator' and is_active`
+      : sql`select full_name from hr.employee where employee_id = ${b.operatorId}::uuid`,
+  );
+  if (op.rows.length === 0) throw new HttpError(400, "Operator tidak ditemukan atau tidak aktif");
+
+  if (b.rcId && (!existing || existing.rcId !== b.rcId)) {
+    const rc = await tx.execute(sql`select 1 from rental.rent_contract where rc_id = ${b.rcId}`);
+    if (rc.rows.length === 0) throw new HttpError(400, `Kontrak ${b.rcId} tidak ditemukan`);
+  }
+  return { unit, operatorName: op.rows[0].full_name };
+}
+
+// Peringatan (tidak memblokir, sama seperti v1): bentrok dengan maintenance atau standby.
+async function workOrderWarnings(tx: Tx, unitId: string, start: string, finish: string) {
+  const maint = await tx.execute<{ d: string }>(
+    sql`select date::text as d from rental.maintenance
+        where unit_id = ${unitId} and date between ${start}::date and ${finish}::date order by date limit 10`,
+  );
+  const stand = await tx.execute<{ d: string }>(
+    sql`select date::text as d from rental.standby_log
+        where unit_id = ${unitId} and date between ${start}::date and ${finish}::date order by date limit 10`,
+  );
+  return [
+    ...(maint.rows.length ? [`Unit ${unitId} punya maintenance pada ${maint.rows.map((r) => r.d).join(", ")}.`] : []),
+    ...(stand.rows.length ? [`Unit ${unitId} punya standby pada ${stand.rows.map((r) => r.d).join(", ")}.`] : []),
+  ];
+}
+
 recordsRouter.post(
   "/work-orders",
   requirePermission("work_order:create"),
@@ -149,19 +198,7 @@ recordsRouter.post(
     const userId = req.session.userId!;
 
     const result = await db.transaction(async (tx) => {
-      const unit = await activeUnit(tx, b.unitId);
-      const rt = await tx.execute(sql`select 1 from rental.unit_price_default where rc_type = ${b.rcType} limit 1`);
-      if (rt.rows.length === 0) throw new HttpError(400, "Tipe work order tidak valid");
-      // Operator harus karyawan aktif ber-role operator. Nama operator juga disimpan di kolom "user" (kompatibel dengan v1).
-      const op = await tx.execute<{ full_name: string }>(
-        sql`select full_name from hr.employee where employee_id = ${b.operatorId}::uuid and lower(role) = 'operator' and is_active`,
-      );
-      if (op.rows.length === 0) throw new HttpError(400, "Operator tidak ditemukan atau tidak aktif");
-      const operatorName = op.rows[0].full_name;
-      if (b.rcId) {
-        const rc = await tx.execute(sql`select 1 from rental.rent_contract where rc_id = ${b.rcId}`);
-        if (rc.rows.length === 0) throw new HttpError(400, `Kontrak ${b.rcId} tidak ditemukan`);
-      }
+      const { unit, operatorName } = await validateWorkOrder(tx, b);
 
       const woId = await nextDailyId(tx, "WO");
       await tx.execute(
@@ -172,19 +209,7 @@ recordsRouter.post(
                ${b.qty}, ${b.time ?? null}, ${b.volume ?? 0}, ${b.pipe}, ${b.remarks}, ${b.rcId})`,
       );
 
-      // Peringatan (tidak memblokir, sama seperti v1): bentrok dengan maintenance atau standby.
-      const maint = await tx.execute<{ d: string }>(
-        sql`select date::text as d from rental.maintenance
-            where unit_id = ${unit.unit_id} and date between ${b.startDate}::date and ${finish}::date order by date limit 10`,
-      );
-      const stand = await tx.execute<{ d: string }>(
-        sql`select date::text as d from rental.standby_log
-            where unit_id = ${unit.unit_id} and date between ${b.startDate}::date and ${finish}::date order by date limit 10`,
-      );
-      const warnings = [
-        ...(maint.rows.length ? [`Unit ${unit.unit_id} punya maintenance pada ${maint.rows.map((r) => r.d).join(", ")}.`] : []),
-        ...(stand.rows.length ? [`Unit ${unit.unit_id} punya standby pada ${stand.rows.map((r) => r.d).join(", ")}.`] : []),
-      ];
+      const warnings = await workOrderWarnings(tx, unit.unit_id, b.startDate, finish);
 
       await audit(tx, userId, "work_order:create", "work_order", woId, {
         unit_id: unit.unit_id, operator: b.operatorId, rc_type: b.rcType, location: b.location, start: b.startDate, finish, rc_id: b.rcId,
@@ -193,6 +218,137 @@ recordsRouter.post(
     });
 
     res.status(201).json(result);
+  }),
+);
+
+// ---------- Cari, lihat, ubah, hapus work order ----------
+const listQuery = z.object({
+  q: z.string().trim().max(100).optional(),
+  rcType: z.string().trim().max(100).optional(),
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+  page: z.coerce.number().int().min(1).max(100000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+
+type WoRow = {
+  wo_id: string; operator: string | null; operator_name: string | null; unit_id: string | null; unit_type: string | null;
+  rc_type: string | null; rc_id: string | null; location: string | null; start_date: string | null; finish_date: string | null;
+  qty: number | null; time: number | null; volume: string | null; pipe: string | null; remarks: string | null;
+};
+
+const woSelect = sql`select w.wo_id, w.operator, coalesce(e.full_name, w."user") as operator_name, w.unit_id, w.unit_type, w.rc_type, w.rc_id,
+    w.location, w.wo_start_date::text as start_date, w.wo_finish_date::text as finish_date, w.qty, w.time, w.volume::text as volume, w.pipe, w.remarks
+  from rental.work_order w left join hr.employee e on e.employee_id = w.operator`;
+
+const toWo = (r: WoRow) => ({
+  id: r.wo_id, operatorId: r.operator, operatorName: r.operator_name, unitId: r.unit_id, unitType: r.unit_type,
+  rcType: r.rc_type, rcId: r.rc_id, location: r.location, startDate: r.start_date, finishDate: r.finish_date ?? r.start_date,
+  qty: r.qty, time: r.time, volume: r.volume === null ? null : Number(r.volume), pipe: r.pipe, remarks: r.remarks,
+});
+
+recordsRouter.get(
+  "/work-orders",
+  requirePermission("work_order:view"),
+  handle(async (req, res) => {
+    const f = listQuery.parse(req.query);
+    const conds = [sql`true`];
+    if (f.q) {
+      const like = `%${f.q.replace(/[\\%_]/g, "\\$&")}%`;
+      conds.push(
+        sql`(w.wo_id ilike ${like} or w.unit_id ilike ${like} or coalesce(e.full_name, w."user") ilike ${like}
+             or w.location ilike ${like} or w.rc_id ilike ${like} or w.remarks ilike ${like})`,
+      );
+    }
+    if (f.rcType) conds.push(sql`w.rc_type = ${f.rcType}`);
+    if (f.from) conds.push(sql`coalesce(w.wo_finish_date, w.wo_start_date) >= ${f.from}::date`);
+    if (f.to) conds.push(sql`w.wo_start_date <= ${f.to}::date`);
+    if (f.from && f.to && f.to < f.from) throw new HttpError(400, "Tanggal sampai tidak boleh sebelum tanggal dari");
+    const where = sql.join(conds, sql` and `);
+
+    const [total, rows] = await Promise.all([
+      db.execute<{ n: string }>(sql`select count(*) as n from rental.work_order w left join hr.employee e on e.employee_id = w.operator where ${where}`),
+      db.execute<WoRow>(
+        sql`${woSelect} where ${where} order by w.wo_start_date desc nulls last, w."timestamp" desc nulls last, w.wo_id desc
+            limit ${f.pageSize} offset ${(f.page - 1) * f.pageSize}`,
+      ),
+    ]);
+    res.json({ items: rows.rows.map(toWo), total: Number(total.rows[0].n), page: f.page, pageSize: f.pageSize });
+  }),
+);
+
+recordsRouter.get(
+  "/work-orders/:id",
+  requirePermission("work_order:view"),
+  handle(async (req, res) => {
+    const r = await db.execute<WoRow>(sql`${woSelect} where w.wo_id = ${String(req.params.id)}`);
+    if (r.rows.length === 0) throw new HttpError(404, "Work order tidak ditemukan");
+    res.json(toWo(r.rows[0]));
+  }),
+);
+
+// Mengganti semua kolom yang bisa diedit (wo_id, created_by, dan timestamp tidak berubah).
+recordsRouter.put(
+  "/work-orders/:id",
+  requirePermission("work_order:edit"),
+  handle(async (req, res) => {
+    const b = workOrderBody.parse(req.body);
+    const finish = b.finishDate ?? b.startDate;
+    if (finish < b.startDate) throw new HttpError(400, "Tanggal selesai tidak boleh sebelum tanggal mulai");
+    const userId = req.session.userId!;
+    const id = String(req.params.id);
+
+    const result = await db.transaction(async (tx) => {
+      const cur = await tx.execute<WoRow>(sql`${woSelect} where w.wo_id = ${id} for update of w`);
+      if (cur.rows.length === 0) throw new HttpError(404, "Work order tidak ditemukan");
+      const before = toWo(cur.rows[0]);
+
+      const { unit, operatorName } = await validateWorkOrder(tx, b, {
+        operatorId: before.operatorId, unitId: before.unitId, rcType: before.rcType, rcId: before.rcId,
+      });
+      await tx.execute(
+        sql`update rental.work_order set "user" = ${operatorName}, operator = ${b.operatorId}::uuid, location = ${b.location}, rc_type = ${b.rcType},
+              wo_start_date = ${b.startDate}::date, wo_finish_date = ${finish}::date, unit_id = ${unit.unit_id}, unit_type = ${unit.unit_type},
+              qty = ${b.qty}, time = ${b.time ?? null}, volume = ${b.volume ?? 0}, pipe = ${b.pipe}, remarks = ${b.remarks}, rc_id = ${b.rcId}
+            where wo_id = ${id}`,
+      );
+      const warnings = await workOrderWarnings(tx, unit.unit_id, b.startDate, finish);
+      const after = { ...before, operatorId: b.operatorId, operatorName, unitId: unit.unit_id, unitType: unit.unit_type, rcType: b.rcType, rcId: b.rcId,
+        location: b.location, startDate: b.startDate, finishDate: finish, qty: b.qty, time: b.time ?? null, volume: b.volume ?? 0, pipe: b.pipe, remarks: b.remarks };
+      await audit(tx, userId, "work_order:edit", "work_order", id, after, before);
+      return { id, unitId: unit.unit_id, startDate: b.startDate, finishDate: finish, warnings };
+    });
+    res.json(result);
+  }),
+);
+
+// Hapus ditolak kalau WO sudah dipakai timesheet (hubungan data tidak boleh putus diam-diam).
+recordsRouter.delete(
+  "/work-orders/:id",
+  requirePermission("work_order:delete"),
+  handle(async (req, res) => {
+    const userId = req.session.userId!;
+    const id = String(req.params.id);
+    await db.transaction(async (tx) => {
+      const cur = await tx.execute<WoRow>(sql`${woSelect} where w.wo_id = ${id} for update of w`);
+      if (cur.rows.length === 0) throw new HttpError(404, "Work order tidak ditemukan");
+
+      const refs = await tx.execute<{ ts: string; val: string; buf: string }>(
+        sql`select (select count(*) from rental.timesheet where work_order_id = ${id}) as ts,
+                   (select count(*) from rental.timesheet_valuation where wo_id = ${id}) as val,
+                   (select count(*) from rental.buffer_timesheet where wo_id = ${id}) as buf`,
+      );
+      const used = [
+        [Number(refs.rows[0].ts), "timesheet"],
+        [Number(refs.rows[0].val), "valuasi timesheet"],
+        [Number(refs.rows[0].buf), "buffer timesheet"],
+      ].filter(([n]) => (n as number) > 0);
+      if (used.length) throw new HttpError(409, `Work order ${id} tidak bisa dihapus karena sudah dipakai di ${used.map(([n, l]) => `${l} (${n})`).join(", ")}.`);
+
+      await tx.execute(sql`delete from rental.work_order where wo_id = ${id}`);
+      await audit(tx, userId, "work_order:delete", "work_order", id, null, toWo(cur.rows[0]));
+    });
+    res.json({ ok: true, id });
   }),
 );
 

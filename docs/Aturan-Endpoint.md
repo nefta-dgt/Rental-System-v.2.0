@@ -9,7 +9,7 @@ Catatan ini mencatat aturan setiap endpoint server v2. **Wajib diperbarui setiap
 - Semua perubahan data dicatat di `access.audit_log`.
 - Kolom `rental.work_order.created_by` baru ada di staging, jadi endpoint pembuat WO belum bisa jalan di live (lihat Planning).
 
-Terakhir diperbarui: 2026-11-09 (tipe work order dan nilai awal time/volume/pipe dari `unit_price_default`).
+Terakhir diperbarui: 2026-11-09 (cari, lihat, ubah, hapus work order).
 
 ---
 
@@ -85,7 +85,33 @@ Terakhir diperbarui: 2026-11-09 (tipe work order dan nilai awal time/volume/pipe
 - Sukses `201`: `{ id, unitId, startDate, finishDate, warnings[] }`.
 - Error: `400` (validasi, unit/operator/`rcId` tidak valid), `401`, `403`, `500`.
 
-Belum ada: list, detail, ubah, dan hapus work order.
+### GET `/api/work-orders`
+- Izin: `work_order:view`.
+- Query (semua opsional): `q` (maks 100 karakter; dicari tidak peka huruf besar/kecil di nomor WO, unit, nama operator, location, RC id, remarks), `rcType`, `from` dan `to` (`YYYY-MM-DD`; WO ikut jika rentang tanggalnya beririsan), `page` (default 1), `pageSize` (default 25, maks 100).
+- Urutan: tanggal mulai terbaru dulu. `to` tidak boleh sebelum `from`.
+- Sukses `200`: `{ items[], total, page, pageSize }`. Tiap item: `id, operatorId, operatorName, unitId, unitType, rcType, rcId, location, startDate, finishDate, qty, time, volume, pipe, remarks`. Tanggal berbentuk teks `YYYY-MM-DD`.
+- Error: `400` (format tanggal/rentang salah), `401`, `403`.
+
+### GET `/api/work-orders/:id`
+- Izin: `work_order:view`. Sukses `200`: satu item seperti di atas. Error: `404` jika tidak ada.
+
+### PUT `/api/work-orders/:id`
+- Izin: `work_order:edit`. Berlaku untuk semua work order (belum ada aturan "hanya WO miliknya").
+- Body sama dengan `POST /api/work-orders` (semua kolom yang bisa diedit diganti sekaligus). `wo_id`, `created_by`, dan `timestamp` tidak berubah.
+- Validasi sama dengan create, **kecuali** nilai yang tidak diganti tidak dicek ulang: WO lama boleh tetap punya unit nonaktif, operator nonaktif, atau tipe lama (mis. `Standby`) selama nilai itu tidak diubah.
+- Kolom `user` ikut diisi nama operator, `unit_type` mengikuti unit. Baris dikunci selama transaksi.
+- Bentrok dengan maintenance/standby hanya `warnings` (tidak memblokir).
+- Dicatat di `access.audit_log` (`work_order:edit`) berikut data sebelum dan sesudah.
+- Sukses `200`: `{ id, unitId, startDate, finishDate, warnings[] }`. Error: `400`, `404`, `401`, `403`.
+
+### DELETE `/api/work-orders/:id`
+- Izin: `work_order:delete`.
+- Ditolak `409` jika WO sudah dipakai di `rental.timesheet`, `rental.timesheet_valuation`, atau `rental.buffer_timesheet` (pesan menyebut jumlahnya). Ini mencegah relasi putus diam-diam (`timesheet_valuation.wo_id` akan di-null otomatis oleh FK).
+- Dicatat di `access.audit_log` (`work_order:delete`) berikut data sebelum dihapus. Tidak bisa dibatalkan.
+- Sukses `200`: `{ ok: true, id }`. Error: `404`, `409`, `401`, `403`.
+
+Izin baru `work_order:view`, `work_order:edit`, `work_order:delete` dibuat lewat `server/migrations/2026-11-09_add_work_order_view_edit_delete_permissions.sql` (staging saja; Superadmin otomatis lewat `*`).
+
 
 ## Maintenance dan standby
 
@@ -107,6 +133,6 @@ Aturan sama untuk keduanya: satu baris per unit per hari, rentang maksimal 31 ha
 ---
 
 ## Yang belum ada
-- List, detail, ubah, dan hapus untuk work order, maintenance, dan standby.
+- List, detail, ubah, dan hapus untuk maintenance dan standby.
 - Endpoint ubah jadwal (`schedule:edit`).
 - Endpoint pengaturan akses Superadmin.

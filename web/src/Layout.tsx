@@ -6,6 +6,7 @@ import { meKey, useCan, useMe } from './auth'
 
 const SUB_ITEMS = [
   { to: '/schedule/work-order', label: 'Work Order', permission: 'work_order:create' },
+  { to: '/schedule/work-order/list', label: 'Daftar Work Order', permission: 'work_order:view' },
   { to: '/schedule/maintenance', label: 'Maintenance', permission: 'maintenance:create' },
   { to: '/schedule/standby', label: 'Standby', permission: 'standby:create' },
 ]
@@ -91,7 +92,7 @@ export default function Layout() {
                 <ul className="ml-4 mt-1 space-y-1 border-l border-slate-200 pl-2">
                   {subItems.map((s) => (
                     <li key={s.to}>
-                      <NavLink to={s.to} className={itemClass}>
+                      <NavLink to={s.to} end className={itemClass}>
                         {s.label}
                       </NavLink>
                     </li>

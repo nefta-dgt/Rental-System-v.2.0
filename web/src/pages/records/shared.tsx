@@ -48,9 +48,14 @@ export function useFormOptions() {
   return useQuery({ queryKey: ['form-options'], queryFn: api.formOptions, staleTime: 5 * 60_000 })
 }
 
-export function UnitPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+// current: unit yang sudah tersimpan di WO yang sedang diedit (bisa saja sudah nonaktif, jadi tidak ada di daftar unit aktif).
+export function UnitPicker({ value, onChange, current }: { value: string; onChange: (v: string) => void; current?: { unitId: string; unitType: string | null } }) {
   const { data, isPending, error } = useFormOptions()
-  const options = useMemo(() => (data?.units ?? []).map((u) => ({ value: u.unitId, label: u.unitId, hint: u.unitType ?? '' })), [data])
+  const options = useMemo(() => {
+    const list = (data?.units ?? []).map((u) => ({ value: u.unitId, label: u.unitId, hint: u.unitType ?? '' }))
+    if (current && !list.some((o) => o.value === current.unitId)) list.unshift({ value: current.unitId, label: current.unitId, hint: current.unitType ?? '' })
+    return list
+  }, [data, current])
   if (error) return <p className="text-sm text-red-600">Gagal memuat daftar unit. Muat ulang halaman.</p>
   return <Dropdown value={value} onChange={onChange} options={options} label="Unit" placeholder={isPending ? 'Memuat unit...' : 'Pilih unit'} searchable />
 }
