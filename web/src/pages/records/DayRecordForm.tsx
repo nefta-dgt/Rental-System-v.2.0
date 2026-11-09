@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { api, type DayRecordCreated } from '../../api'
+import { useCan } from '../../auth'
 import { Field, FormCard, MAX_RANGE_DAYS, Result, SubmitButton, UnitPicker, daysBetween, inputClass, shiftIso, todayIso } from './shared'
 
 type Kind = 'maintenance' | 'standby'
@@ -24,6 +26,8 @@ type Errors = Partial<Record<'unit' | 'start' | 'finish', string>>
 
 export default function DayRecordForm({ kind }: { kind: Kind }) {
   const t = TEXT[kind]
+  const qc = useQueryClient()
+  const canView = useCan()(`${kind}:view`)
   const [unitId, setUnitId] = useState('')
   const [startDate, setStartDate] = useState(todayIso())
   const [finishDate, setFinishDate] = useState('')
@@ -37,6 +41,7 @@ export default function DayRecordForm({ kind }: { kind: Kind }) {
       return kind === 'maintenance' ? api.createMaintenance({ ...body, remarks: remarks.trim() || undefined }) : api.createStandby(body)
     },
     onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ['day-records', kind] })
       setCreated(r)
       setUnitId('')
       setFinishDate('')
@@ -88,7 +93,12 @@ export default function DayRecordForm({ kind }: { kind: Kind }) {
           </Field>
         )}
 
-        <div className="flex justify-end">
+        <div className="flex items-center justify-end gap-3">
+          {canView && (
+            <Link to={`/schedule/${kind}`} className="text-sm text-slate-600 underline">
+              Kembali ke daftar
+            </Link>
+          )}
           <SubmitButton pending={create.isPending}>{t.submit}</SubmitButton>
         </div>
       </form>

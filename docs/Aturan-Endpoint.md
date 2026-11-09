@@ -9,7 +9,7 @@ Catatan ini mencatat aturan setiap endpoint server v2. **Wajib diperbarui setiap
 - Semua perubahan data dicatat di `access.audit_log`.
 - Kolom `rental.work_order.created_by` baru ada di staging, jadi endpoint pembuat WO belum bisa jalan di live (lihat Planning).
 
-Terakhir diperbarui: 2026-11-09 (filter daftar work order: `unitId`, `operator`, `date`; item memuat `timestamp` dan `createdByName`).
+Terakhir diperbarui: 2026-11-10 (daftar maintenance dan standby: GET `/api/maintenance` dan `/api/standby`).
 
 ---
 
@@ -123,6 +123,18 @@ Izin baru `work_order:view`, `work_order:edit`, `work_order:delete` dibuat lewat
 
 Aturan sama untuk keduanya: satu baris per unit per hari, rentang maksimal 31 hari, semua-atau-tidak-sama-sekali.
 
+### GET `/api/maintenance` dan GET `/api/standby`
+- Izin: `maintenance:view` / `standby:view` (migrasi `server/migrations/2026-11-10_add_maintenance_standby_view_permissions.sql`, staging saja; Superadmin otomatis lewat `*`).
+- Satu item = satu baris tabel (satu unit, satu hari), sama seperti isi `rental.maintenance` / `rental.standby_log`. Rentang yang dibuat sekaligus muncul sebagai beberapa baris.
+- Query (semua opsional, digabung dengan AND; teks tidak peka huruf besar/kecil dan cocok sebagian):
+  - `q` (maks 100): maintenance → `remarks`; standby → nama pembuat (kolom `user`).
+  - `unitId` (maks 100): ID unit.
+  - `date` (`YYYY-MM-DD`): hanya baris pada tanggal itu (persis).
+  - `page` (default 1), `pageSize` (default 25, maks 100).
+- Urutan: tanggal terbaru dulu, lalu `id` terbesar.
+- Sukses `200`: `{ items[], total, page, pageSize }`. Tiap item: `id, unitId, unitType, date (YYYY-MM-DD), createdAt, note`. `note` = `remarks` (maintenance) atau nama pembuat (standby); `null` jika kosong (data standby dari v1 umumnya kosong).
+- Error: `400` (format tanggal salah), `401`, `403`.
+
 ### POST `/api/maintenance`
 - Izin: `maintenance:create`.
 - Body: `unitId` (wajib), `startDate` (wajib), `finishDate` (opsional, default `startDate`), `remarks` (opsional, maks 2000).
@@ -139,6 +151,6 @@ Aturan sama untuk keduanya: satu baris per unit per hari, rentang maksimal 31 ha
 ---
 
 ## Yang belum ada
-- List, detail, ubah, dan hapus untuk maintenance dan standby.
+- Detail, ubah, dan hapus untuk maintenance dan standby (daftar sudah ada).
 - Endpoint ubah jadwal (`schedule:edit`).
 - Endpoint pengaturan akses Superadmin.
