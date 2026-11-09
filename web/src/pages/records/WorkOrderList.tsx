@@ -49,7 +49,7 @@ export default function WorkOrderList() {
           <p className="text-sm text-slate-500">Cari work order, lalu klik barisnya untuk melihat atau mengubah.</p>
         </div>
         {can('work_order:create') && (
-          <Link to="/schedule/work-order" className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700">
+          <Link to="/schedule/work-order/new" className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700">
             Buat work order
           </Link>
         )}

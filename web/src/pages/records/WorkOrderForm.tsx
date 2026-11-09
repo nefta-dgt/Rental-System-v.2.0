@@ -8,7 +8,7 @@ import { Field, FormCard, Result, SubmitButton, UnitPicker, inputClass, readOnly
 
 type Errors = Partial<Record<'operator' | 'unit' | 'location' | 'start' | 'finish', string>>
 
-// Form yang sama dipakai untuk membuat (/schedule/work-order) dan mengubah (/schedule/work-order/:id/edit).
+// Form yang sama dipakai untuk membuat (/schedule/work-order/new) dan mengubah (/schedule/work-order/:id/edit).
 export default function WorkOrderForm() {
   const { id } = useParams()
   const editing = !!id
@@ -132,7 +132,7 @@ export default function WorkOrderForm() {
     mutationFn: () => api.deleteWorkOrder(id!),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['work-orders'] })
-      navigate('/schedule/work-order/list', { replace: true, state: { deleted: id } })
+      navigate('/schedule/work-order', { replace: true, state: { deleted: id } })
     },
   })
 
@@ -154,7 +154,7 @@ export default function WorkOrderForm() {
     return (
       <FormCard title="Ubah Work Order" description="">
         <Result kind="error">{detail.error.message}</Result>
-        <Link to="/schedule/work-order/list" className="text-sm font-medium text-blue-700 underline">
+        <Link to="/schedule/work-order" className="text-sm font-medium text-blue-700 underline">
           Kembali ke daftar
         </Link>
       </FormCard>
@@ -258,7 +258,7 @@ export default function WorkOrderForm() {
           </div>
           <div className="flex items-center gap-3">
             {editing && (
-              <Link to="/schedule/work-order/list" className="text-sm text-slate-600 underline">
+              <Link to="/schedule/work-order" className="text-sm text-slate-600 underline">
                 Kembali ke daftar
               </Link>
             )}

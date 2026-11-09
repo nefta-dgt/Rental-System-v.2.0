@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { RequireAuth, RequirePermission } from './auth'
 import Layout from './Layout'
 import Home from './pages/Home'
@@ -23,11 +23,12 @@ export default function App() {
               <Route element={<RequirePermission permission="schedule:view" />}>
                 <Route path="/schedule" element={<Schedule />} />
               </Route>
-              <Route element={<RequirePermission permission="work_order:create" />}>
-                <Route path="/schedule/work-order" element={<WorkOrderForm />} />
-              </Route>
               <Route element={<RequirePermission permission="work_order:view" />}>
-                <Route path="/schedule/work-order/list" element={<WorkOrderList />} />
+                <Route path="/schedule/work-order" element={<WorkOrderList />} />
+              </Route>
+              <Route path="/schedule/work-order/list" element={<Navigate to="/schedule/work-order" replace />} />
+              <Route element={<RequirePermission permission="work_order:create" />}>
+                <Route path="/schedule/work-order/new" element={<WorkOrderForm />} />
               </Route>
               <Route element={<RequirePermission permission="work_order:edit" />}>
                 <Route path="/schedule/work-order/:id/edit" element={<WorkOrderForm />} />
