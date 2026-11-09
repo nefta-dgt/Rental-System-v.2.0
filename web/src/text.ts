@@ -3,7 +3,7 @@
 const ACRONYMS = new Set([
   'PT', 'CV', 'UD', 'PD', 'PP', 'KSO', 'JO', 'DKI', 'KM', 'TNI', 'BUMN',
   'KCBM', 'BSD', 'CAA', 'PIK', 'PKU', 'SCG', 'KVB', 'UPG', 'PSM', 'PCI', 'BMW', 'KS',
-  'RS', 'RSUD', 'SD', 'SMP', 'SMA', 'SMAN', 'SMS',
+  'RS', 'RSUD', 'RT', 'RW', 'SD', 'SMP', 'SMA', 'SMAN', 'SMS',
   'II', 'III', 'IV', 'VI', 'VII', 'VIII', 'IX', 'XI', 'XII',
 ])
 
