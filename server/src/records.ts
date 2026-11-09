@@ -417,8 +417,8 @@ recordsRouter.post(
       if (conflicts.length) throw conflictError("Maintenance", unit.unit_id, conflicts);
 
       const ins = await tx.execute<{ id: number; d: string }>(
-        sql`insert into rental.maintenance (unit_id, date, remarks)
-            select ${unit.unit_id}, g.d::date, ${b.remarks}
+        sql`insert into rental.maintenance (unit_id, date, remarks, created_by)
+            select ${unit.unit_id}, g.d::date, ${b.remarks}, ${userId}::uuid
             from generate_series(${b.startDate}::date, ${finish}::date, interval '1 day') as g(d)
             returning id, date::text as d`,
       );
@@ -446,8 +446,8 @@ recordsRouter.post(
       if (conflicts.length) throw conflictError("Standby", unit.unit_id, conflicts);
 
       const ins = await tx.execute<{ id: number; d: string }>(
-        sql`insert into rental.standby_log (unit_id, date, "user")
-            select ${unit.unit_id}, g.d::date, ${name}
+        sql`insert into rental.standby_log (unit_id, date, "user", created_by)
+            select ${unit.unit_id}, g.d::date, ${name}, ${userId}::uuid
             from generate_series(${b.startDate}::date, ${finish}::date, interval '1 day') as g(d)
             returning id, date::text as d`,
       );
@@ -469,13 +469,15 @@ const dayListQuery = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });
 
-type DayRow = { id: number; unit_id: string; unit_type: string | null; date: string; created_at: string | null; note: string | null };
-const toDay = (r: DayRow) => ({ id: r.id, unitId: r.unit_id, unitType: r.unit_type, date: r.date, createdAt: r.created_at, note: r.note });
+type DayRow = { id: number; unit_id: string; unit_type: string | null; date: string; created_at: string | null; created_by_name: string | null; note: string | null };
+const toDay = (r: DayRow) => ({ id: r.id, unitId: r.unit_id, unitType: r.unit_type, date: r.date, createdAt: r.created_at, createdByName: r.created_by_name, note: r.note });
 
-// Maintenance: note = remarks. Standby: note = nama akun pembuat (kolom "user"). q mencari di note.
+// createdByName: nama akun dari created_by; standby lama (v1) cadangannya kolom "user". note: remarks (maintenance), null untuk standby.
+// q mencari di remarks (maintenance) atau nama pembuat (standby).
+const CREATOR = sql`coalesce(cu.employee_name, t."user")`;
 const DAY_LISTS = {
-  maintenance: { table: sql`rental.maintenance`, note: sql`t.remarks`, view: "maintenance:view" },
-  standby: { table: sql`rental.standby_log`, note: sql`t."user"`, view: "standby:view" },
+  maintenance: { table: sql`rental.maintenance`, creator: sql`cu.employee_name`, note: sql`t.remarks`, search: sql`t.remarks`, view: "maintenance:view" },
+  standby: { table: sql`rental.standby_log`, creator: CREATOR, note: sql`null::text`, search: CREATOR, view: "standby:view" },
 } as const;
 
 for (const [kind, cfg] of Object.entries(DAY_LISTS)) {
@@ -485,16 +487,17 @@ for (const [kind, cfg] of Object.entries(DAY_LISTS)) {
     handle(async (req, res) => {
       const f = dayListQuery.parse(req.query);
       const conds = [sql`true`];
-      if (f.q) conds.push(sql`${cfg.note} ilike ${likePattern(f.q)}`);
+      if (f.q) conds.push(sql`${cfg.search} ilike ${likePattern(f.q)}`);
       if (f.unitId) conds.push(sql`t.unit_id ilike ${likePattern(f.unitId)}`);
       if (f.date) conds.push(sql`t.date = ${f.date}::date`);
       const where = sql.join(conds, sql` and `);
 
       const [total, rows] = await Promise.all([
-        db.execute<{ n: string }>(sql`select count(*) as n from ${cfg.table} t where ${where}`),
+        db.execute<{ n: string }>(sql`select count(*) as n from ${cfg.table} t left join hr.users cu on cu.user_id = t.created_by where ${where}`),
         db.execute<DayRow>(
-          sql`select t.id, t.unit_id, u.unit_type, t.date::text as date, t.created_at::text as created_at, ${cfg.note} as note
+          sql`select t.id, t.unit_id, u.unit_type, t.date::text as date, t.created_at::text as created_at, ${cfg.creator} as created_by_name, ${cfg.note} as note
               from ${cfg.table} t left join rental.unit u on u.unit_id = t.unit_id
+              left join hr.users cu on cu.user_id = t.created_by
               where ${where} order by t.date desc, t.id desc
               limit ${f.pageSize} offset ${(f.page - 1) * f.pageSize}`,
         ),
