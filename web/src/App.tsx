@@ -5,6 +5,7 @@ import Layout from './Layout'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import DayRecordList from './pages/records/DayRecordList'
+import StandbyList from './pages/records/StandbyList'
 import DayRecordForm from './pages/records/DayRecordForm'
 import WorkOrderForm from './pages/records/WorkOrderForm'
 import WorkOrderList from './pages/records/WorkOrderList'
@@ -44,7 +45,7 @@ export default function App() {
                 <Route path="/schedule/maintenance/new" element={<DayRecordForm kind="maintenance" />} />
               </Route>
               <Route element={<RequirePermission permission="standby:view" />}>
-                <Route path="/schedule/standby" element={<DayRecordList kind="standby" />} />
+                <Route path="/schedule/standby" element={<StandbyList />} />
               </Route>
               <Route element={<RequirePermission permission="standby:create" />}>
                 <Route path="/schedule/standby/new" element={<DayRecordForm kind="standby" />} />
