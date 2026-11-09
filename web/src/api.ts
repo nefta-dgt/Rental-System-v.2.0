@@ -65,6 +65,8 @@ export type WorkOrderFilter = { q?: string; unitId?: string; operator?: string; 
 export type DayRecordRow = { id: number; unitId: string; unitType: string | null; date: string; createdAt: string | null; createdByName: string | null; note: string | null }
 export type DayRecordList = { items: DayRecordRow[]; total: number; page: number; pageSize: number }
 export type DayRecordFilter = { q?: string; unitId?: string; date?: string; page?: number; pageSize?: number }
+export type StandbyRange = { unitId: string; unitType: string | null; startDate: string; finishDate: string; days: number; createdAt: string | null; createdByName: string | null }
+export type StandbyRangeList = { items: StandbyRange[]; total: number; page: number; pageSize: number }
 export type DayRecordCreated = { unitId: string; startDate: string; finishDate: string; count: number }
 
 export class ApiError extends Error {
@@ -111,6 +113,11 @@ export const api = {
     const qs = new URLSearchParams()
     Object.entries(f).forEach(([k, v]) => v !== undefined && v !== '' && qs.set(k, String(v)))
     return request<DayRecordList>(`/api/${kind}?${qs}`)
+  },
+  listStandbyRanges: (f: DayRecordFilter) => {
+    const qs = new URLSearchParams()
+    Object.entries(f).forEach(([k, v]) => v !== undefined && v !== '' && qs.set(k, String(v)))
+    return request<StandbyRangeList>(`/api/standby/ranges?${qs}`)
   },
   createMaintenance: (b: DayRecordInput) => request<DayRecordCreated>('/api/maintenance', { method: 'POST', body: JSON.stringify(b) }),
   createStandby: (b: DayRecordInput) => request<DayRecordCreated>('/api/standby', { method: 'POST', body: JSON.stringify(b) }),

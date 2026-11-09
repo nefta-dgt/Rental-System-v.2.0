@@ -9,7 +9,7 @@ Catatan ini mencatat aturan setiap endpoint server v2. **Wajib diperbarui setiap
 - Semua perubahan data dicatat di `access.audit_log`.
 - Kolom `created_by` pada `rental.work_order`, `rental.maintenance`, dan `rental.standby_log` baru ada di staging, jadi endpoint buat dan daftar untuk ketiganya belum bisa jalan di live (lihat Planning).
 
-Terakhir diperbarui: 2026-11-10 (maintenance dan standby memakai `created_by`; daftar memuat `createdByName`).
+Terakhir diperbarui: 2026-11-10 (GET `/api/standby/ranges`: standby digabung per rentang).
 
 ---
 
@@ -134,6 +134,14 @@ Aturan sama untuk keduanya: satu baris per unit per hari, rentang maksimal 31 ha
 - Urutan: tanggal terbaru dulu, lalu `id` terbesar.
 - Sukses `200`: `{ items[], total, page, pageSize }`. Tiap item: `id, unitId, unitType, date (YYYY-MM-DD), createdAt, createdByName, note`. `createdByName` = nama akun (`hr.users.employee_name`) dari `created_by`; untuk standby lama dari v1 cadangannya kolom `user`; `null` jika tidak ada. `note` = `remarks` (maintenance), selalu `null` untuk standby.
 - Error: `400` (format tanggal salah), `401`, `403`.
+
+### GET `/api/standby/ranges`
+- Izin: `standby:view`. Dipakai halaman Daftar Standby.
+- Menggabungkan hari berurutan untuk satu unit menjadi satu rentang (tanpa lubang), memakai data `rental.standby_log`. Penggabungan dilakukan **sebelum** filter `q` dan `date`, jadi satu rentang tidak terpotong oleh filter. Filter `unitId` diterapkan sebelum penggabungan (aman, per unit).
+- Query (opsional, digabung dengan AND): `q` (nama pembuat, tidak peka huruf besar/kecil, cocok sebagian), `unitId`, `date` (`YYYY-MM-DD`; rentang yang mencakup tanggal itu), `page`, `pageSize` (default 25, maks 100).
+- Urutan: tanggal selesai terbaru, lalu tanggal mulai terbaru, lalu unit.
+- Sukses `200`: `{ items[], total, page, pageSize }`. Tiap item: `unitId, unitType, startDate, finishDate, days, createdAt, createdByName`. `days` = jumlah hari berbeda dalam rentang; `createdAt` = pembuatan baris paling awal; `createdByName` = pembuat baris pertama yang punya nama (rentang yang dibuat beberapa orang hanya menampilkan satu nama).
+- Error: `400` (format tanggal salah), `401`, `403`. Endpoint harian `GET /api/standby` tetap ada.
 
 ### POST `/api/maintenance`
 - Izin: `maintenance:create`.

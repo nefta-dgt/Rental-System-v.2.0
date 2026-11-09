@@ -506,3 +506,49 @@ for (const [kind, cfg] of Object.entries(DAY_LISTS)) {
     }),
   );
 }
+
+// Standby digabung per rentang: hari berurutan untuk satu unit menjadi satu baris (gaps-and-islands).
+// Penggabungan dilakukan sebelum filter tanggal dan pembuat, supaya satu rentang tidak terpotong oleh filter.
+type RangeRow = { unit_id: string; unit_type: string | null; start_date: string; finish_date: string; days: string; created_at: string | null; created_by_name: string | null };
+
+recordsRouter.get(
+  "/standby/ranges",
+  requirePermission("standby:view"),
+  handle(async (req, res) => {
+    const f = dayListQuery.parse(req.query);
+    const unitCond = f.unitId ? sql`where t.unit_id ilike ${likePattern(f.unitId)}` : sql``;
+    const conds = [sql`true`];
+    if (f.q) conds.push(sql`g.created_by_name ilike ${likePattern(f.q)}`);
+    if (f.date) conds.push(sql`${f.date}::date between g.start_date and g.finish_date`);
+    const where = sql.join(conds, sql` and `);
+
+    const base = sql`
+      with s as (
+        select t.unit_id, t.date, t.created_at, coalesce(cu.employee_name, t."user") as creator,
+               t.date - (dense_rank() over (partition by t.unit_id order by t.date))::int as grp
+        from rental.standby_log t left join hr.users cu on cu.user_id = t.created_by ${unitCond}
+      ), g as (
+        select s.unit_id, min(s.date) as start_date, max(s.date) as finish_date, count(distinct s.date) as days, min(s.created_at) as created_at,
+               (array_agg(s.creator order by s.date, s.created_at) filter (where s.creator is not null))[1] as created_by_name
+        from s group by s.unit_id, s.grp
+      )`;
+    const [total, rows] = await Promise.all([
+      db.execute<{ n: string }>(sql`${base} select count(*) as n from g where ${where}`),
+      db.execute<RangeRow>(
+        sql`${base} select g.unit_id, u.unit_type, g.start_date::text as start_date, g.finish_date::text as finish_date, g.days::text as days,
+                   g.created_at::text as created_at, g.created_by_name
+            from g left join rental.unit u on u.unit_id = g.unit_id
+            where ${where} order by g.finish_date desc, g.start_date desc, g.unit_id
+            limit ${f.pageSize} offset ${(f.page - 1) * f.pageSize}`,
+      ),
+    ]);
+    res.json({
+      items: rows.rows.map((r) => ({
+        unitId: r.unit_id, unitType: r.unit_type, startDate: r.start_date, finishDate: r.finish_date, days: Number(r.days),
+        createdAt: r.created_at, createdByName: r.created_by_name,
+      })),
+      total: Number(total.rows[0].n), page: f.page, pageSize: f.pageSize,
+    });
+  }),
+);
+
