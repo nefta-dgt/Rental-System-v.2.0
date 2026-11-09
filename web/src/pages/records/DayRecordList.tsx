@@ -10,20 +10,18 @@ type Kind = 'maintenance' | 'standby'
 
 const PAGE_SIZE = 25
 
-const TEXT: Record<Kind, { title: string; description: string; create: string; searchPlaceholder: string; noteHeader: string }> = {
+const TEXT: Record<Kind, { title: string; description: string; create: string; searchPlaceholder: string }> = {
   maintenance: {
     title: 'Daftar Maintenance',
     description: 'Satu baris per unit per hari.',
     create: 'Buat maintenance',
     searchPlaceholder: 'Cari keterangan...',
-    noteHeader: 'Keterangan',
   },
   standby: {
     title: 'Daftar Standby',
     description: 'Satu baris per unit per hari.',
     create: 'Buat standby',
     searchPlaceholder: 'Cari nama pembuat...',
-    noteHeader: 'Created by',
   },
 }
 
@@ -59,8 +57,8 @@ export default function DayRecordList({ kind }: { kind: Kind }) {
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const hasFilter = !!(filter.q || filter.unitId || filter.date)
 
-  // Maintenance: keterangan = remarks. Standby: pembuat tampil di bawah timestamp, seperti Created by di daftar work order.
-  const headers = kind === 'maintenance' ? ['Dibuat', 'Unit', 'Tanggal', t.noteHeader] : ['Dibuat', 'Unit', 'Tanggal']
+  // Pembuat tampil di bawah timestamp, seperti Created by di daftar work order. Maintenance punya kolom Keterangan (remarks).
+  const headers = kind === 'maintenance' ? ['Dibuat', 'Unit', 'Tanggal', 'Keterangan'] : ['Dibuat', 'Unit', 'Tanggal']
 
   return (
     <main className="space-y-4 p-4 sm:p-6">
@@ -124,7 +122,7 @@ export default function DayRecordList({ kind }: { kind: Kind }) {
                 <tr className="hover:bg-slate-50">
                   <td className="whitespace-nowrap border-b border-slate-100 px-3 py-2.5">
                     <div>{formatTimestamp(r.createdAt)}</div>
-                    {kind === 'standby' && <div className="min-h-4 text-xs text-slate-500">{r.note ? properCase(r.note) : <span className="text-slate-300">-</span>}</div>}
+                    <div className="min-h-4 text-xs text-slate-500">{r.createdByName ? properCase(r.createdByName) : <span className="text-slate-300">-</span>}</div>
                   </td>
                   <td className="whitespace-nowrap border-b border-slate-100 px-3 py-2.5">
                     {r.unitId}

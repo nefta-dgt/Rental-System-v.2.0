@@ -7,9 +7,9 @@ Catatan ini mencatat aturan setiap endpoint server v2. **Wajib diperbarui setiap
 - Autentikasi: sesi cookie (`connect.sid`, httpOnly, 8 jam), disimpan di memori server.
 - Izin dicek lewat `requirePermission(key)` ([server/src/access.ts](../server/src/access.ts)). Belum login → `401`, tidak punya izin → `403`.
 - Semua perubahan data dicatat di `access.audit_log`.
-- Kolom `rental.work_order.created_by` baru ada di staging, jadi endpoint pembuat WO belum bisa jalan di live (lihat Planning).
+- Kolom `created_by` pada `rental.work_order`, `rental.maintenance`, dan `rental.standby_log` baru ada di staging, jadi endpoint buat dan daftar untuk ketiganya belum bisa jalan di live (lihat Planning).
 
-Terakhir diperbarui: 2026-11-10 (daftar maintenance dan standby: GET `/api/maintenance` dan `/api/standby`).
+Terakhir diperbarui: 2026-11-10 (maintenance dan standby memakai `created_by`; daftar memuat `createdByName`).
 
 ---
 
@@ -127,18 +127,19 @@ Aturan sama untuk keduanya: satu baris per unit per hari, rentang maksimal 31 ha
 - Izin: `maintenance:view` / `standby:view` (migrasi `server/migrations/2026-11-10_add_maintenance_standby_view_permissions.sql`, staging saja; Superadmin otomatis lewat `*`).
 - Satu item = satu baris tabel (satu unit, satu hari), sama seperti isi `rental.maintenance` / `rental.standby_log`. Rentang yang dibuat sekaligus muncul sebagai beberapa baris.
 - Query (semua opsional, digabung dengan AND; teks tidak peka huruf besar/kecil dan cocok sebagian):
-  - `q` (maks 100): maintenance → `remarks`; standby → nama pembuat (kolom `user`).
+  - `q` (maks 100): maintenance → `remarks`; standby → nama pembuat (`createdByName`).
   - `unitId` (maks 100): ID unit.
   - `date` (`YYYY-MM-DD`): hanya baris pada tanggal itu (persis).
   - `page` (default 1), `pageSize` (default 25, maks 100).
 - Urutan: tanggal terbaru dulu, lalu `id` terbesar.
-- Sukses `200`: `{ items[], total, page, pageSize }`. Tiap item: `id, unitId, unitType, date (YYYY-MM-DD), createdAt, note`. `note` = `remarks` (maintenance) atau nama pembuat (standby); `null` jika kosong (data standby dari v1 umumnya kosong).
+- Sukses `200`: `{ items[], total, page, pageSize }`. Tiap item: `id, unitId, unitType, date (YYYY-MM-DD), createdAt, createdByName, note`. `createdByName` = nama akun (`hr.users.employee_name`) dari `created_by`; untuk standby lama dari v1 cadangannya kolom `user`; `null` jika tidak ada. `note` = `remarks` (maintenance), selalu `null` untuk standby.
 - Error: `400` (format tanggal salah), `401`, `403`.
 
 ### POST `/api/maintenance`
 - Izin: `maintenance:create`.
 - Body: `unitId` (wajib), `startDate` (wajib), `finishDate` (opsional, default `startDate`), `remarks` (opsional, maks 2000).
 - Tidak boleh bentrok dengan work order atau maintenance lain pada tanggal itu.
+- Setiap baris yang dibuat mengisi `created_by` dengan akun yang login.
 - Sukses `201`: `{ unitId, startDate, finishDate, count }`.
 - Error: `400` (validasi, rentang > 31 hari, unit tidak valid), `409` (bentrok; berisi `conflicts[]` dan tidak ada data tersimpan), `401`, `403`.
 
@@ -146,6 +147,7 @@ Aturan sama untuk keduanya: satu baris per unit per hari, rentang maksimal 31 ha
 - Izin: `standby:create`.
 - Body: sama dengan maintenance, tetapi tanpa `remarks`; kolom `user` diisi nama akun yang login.
 - Tidak boleh bentrok dengan work order, maintenance, atau standby lain pada tanggal itu.
+- Setiap baris yang dibuat mengisi `created_by` (akun yang login); kolom `user` tetap diisi nama akun seperti sebelumnya.
 - Sukses `201` dan error sama seperti maintenance.
 
 ---

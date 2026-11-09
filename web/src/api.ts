@@ -62,7 +62,7 @@ export type WorkOrderRow = {
 }
 export type WorkOrderList = { items: WorkOrderRow[]; total: number; page: number; pageSize: number }
 export type WorkOrderFilter = { q?: string; unitId?: string; operator?: string; rcType?: string; date?: string; page?: number; pageSize?: number }
-export type DayRecordRow = { id: number; unitId: string; unitType: string | null; date: string; createdAt: string | null; note: string | null }
+export type DayRecordRow = { id: number; unitId: string; unitType: string | null; date: string; createdAt: string | null; createdByName: string | null; note: string | null }
 export type DayRecordList = { items: DayRecordRow[]; total: number; page: number; pageSize: number }
 export type DayRecordFilter = { q?: string; unitId?: string; date?: string; page?: number; pageSize?: number }
 export type DayRecordCreated = { unitId: string; startDate: string; finishDate: string; count: number }
