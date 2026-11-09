@@ -19,10 +19,12 @@ export type ScheduleUnit = { unitId: string; unitType: string | null; active: bo
 export type Schedule = { from: string; to: string; days: string[]; units: ScheduleUnit[] }
 
 export type FormOptions = {
+  operators: { employeeId: string; name: string }[]
   units: { unitId: string; unitType: string | null }[]
   contracts: { rcId: string; rcType: string | null; location: string | null; status: string | null }[]
 }
 export type WorkOrderInput = {
+  operatorId: string
   unitId: string
   rcType: string
   location: string

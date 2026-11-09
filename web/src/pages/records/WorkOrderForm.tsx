@@ -2,14 +2,15 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { api, type WorkOrderCreated } from '../../api'
 import Dropdown from '../../components/Dropdown'
-import { Field, FormCard, Result, SubmitButton, UnitPicker, inputClass, shiftIso, todayIso, useFormOptions } from './shared'
+import { Field, FormCard, Result, SubmitButton, UnitPicker, inputClass, readOnlyClass, shiftIso, todayIso, useFormOptions } from './shared'
 
 const RC_TYPES = ['Retail', 'Contract', 'Standby', 'Work-maintenance']
 
-type Errors = Partial<Record<'unit' | 'location' | 'start' | 'finish', string>>
+type Errors = Partial<Record<'operator' | 'unit' | 'location' | 'start' | 'finish', string>>
 
 export default function WorkOrderForm() {
   const { data: options } = useFormOptions()
+  const [operatorId, setOperatorId] = useState('')
   const [unitId, setUnitId] = useState('')
   const [rcType, setRcType] = useState('Retail')
   const [location, setLocation] = useState('')
@@ -24,14 +25,18 @@ export default function WorkOrderForm() {
   const [errors, setErrors] = useState<Errors>({})
   const [created, setCreated] = useState<WorkOrderCreated | null>(null)
 
+  const operatorOptions = useMemo(() => (options?.operators ?? []).map((o) => ({ value: o.employeeId, label: o.name })), [options])
+  const unitType = useMemo(() => options?.units.find((u) => u.unitId === unitId)?.unitType ?? '', [options, unitId])
+
   const contractOptions = useMemo(
-    () => [{ value: '', label: 'Tanpa kontrak' }, ...(options?.contracts ?? []).map((c) => ({ value: c.rcId, label: c.rcId, hint: c.rcType ?? '' }))],
+    () => [{ value: '', label: '(kosong)' }, ...(options?.contracts ?? []).map((c) => ({ value: c.rcId, label: c.rcId, hint: c.rcType ?? '' }))],
     [options],
   )
 
   const create = useMutation({
     mutationFn: () =>
       api.createWorkOrder({
+        operatorId,
         unitId,
         rcType,
         location: location.trim(),
@@ -46,6 +51,7 @@ export default function WorkOrderForm() {
       }),
     onSuccess: (r) => {
       setCreated(r)
+      setOperatorId('')
       setUnitId('')
       setLocation('')
       setFinishDate('')
@@ -61,6 +67,7 @@ export default function WorkOrderForm() {
     e.preventDefault()
     setCreated(null)
     const err: Errors = {}
+    if (!operatorId) err.operator = 'Pilih operator.'
     if (!unitId) err.unit = 'Pilih unit.'
     if (!location.trim()) err.location = 'Lokasi wajib diisi.'
     if (!startDate) err.start = 'Tanggal mulai wajib diisi.'
@@ -88,16 +95,28 @@ export default function WorkOrderForm() {
       {create.error && <Result kind="error">{create.error.message}</Result>}
 
       <form onSubmit={onSubmit} className="space-y-4 rounded-xl bg-white p-4 shadow-sm sm:p-6" noValidate>
+        <Field label="Operator" error={errors.operator}>
+          <Dropdown value={operatorId} onChange={setOperatorId} label="Operator" options={operatorOptions} placeholder={options ? 'Pilih operator' : 'Memuat operator...'} searchable />
+        </Field>
+
+        <Field label="Tipe Work Order">
+          <Dropdown value={rcType} onChange={setRcType} label="Tipe work order" options={RC_TYPES.map((t) => ({ value: t, label: t }))} />
+        </Field>
+
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Unit" error={errors.unit}>
             <UnitPicker value={unitId} onChange={setUnitId} />
           </Field>
-          <Field label="Tipe work order">
-            <Dropdown value={rcType} onChange={setRcType} label="Tipe work order" options={RC_TYPES.map((t) => ({ value: t, label: t }))} />
+          <Field label="Unit type" hint="Otomatis dari unit.">
+            <input value={unitType} readOnly tabIndex={-1} placeholder="-" className={readOnlyClass} />
           </Field>
         </div>
 
-        <Field label="Lokasi" error={errors.location}>
+        <Field label="RC id" optional>
+          <Dropdown value={rcId} onChange={setRcId} label="RC id" options={contractOptions} searchable />
+        </Field>
+
+        <Field label="Location" error={errors.location}>
           <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Contoh: Proyek Cilegon" maxLength={500} className={inputClass} />
         </Field>
 
@@ -111,25 +130,21 @@ export default function WorkOrderForm() {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-4">
-          <Field label="Jumlah">
+          <Field label="Qty">
             <input type="number" min={0} max={999} step={1} value={qty} onChange={(e) => setQty(e.target.value)} className={inputClass} />
           </Field>
-          <Field label="Jam" optional>
+          <Field label="Time" optional>
             <input type="number" min={0} step={1} value={time} onChange={(e) => setTime(e.target.value)} className={inputClass} />
           </Field>
           <Field label="Volume" optional>
             <input type="number" min={0} step="any" value={volume} onChange={(e) => setVolume(e.target.value)} className={inputClass} />
           </Field>
-          <Field label="Pipa" optional>
+          <Field label="Pipe" optional>
             <input value={pipe} onChange={(e) => setPipe(e.target.value)} placeholder="10" maxLength={100} className={inputClass} />
           </Field>
         </div>
 
-        <Field label="Kontrak" optional hint="Hubungkan ke kontrak sewa kalau ada.">
-          <Dropdown value={rcId} onChange={setRcId} label="Kontrak" options={contractOptions} searchable />
-        </Field>
-
-        <Field label="Catatan" optional>
+        <Field label="Remarks" optional>
           <textarea value={remarks} onChange={(e) => setRemarks(e.target.value)} rows={3} maxLength={2000} className={inputClass} />
         </Field>
 

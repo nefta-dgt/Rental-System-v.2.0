@@ -96,15 +96,20 @@ recordsRouter.get(
     const perms = await loadPermissions(req.session.userId);
     if (!CREATE_KEYS.some((k) => can(perms, k))) throw new HttpError(403, "Anda tidak punya izin untuk aksi ini");
 
-    const [units, contracts] = await Promise.all([
+    const [units, contracts, operators] = await Promise.all([
       db.execute<{ unit_id: string; unit_type: string | null }>(
         sql`select unit_id, unit_type from rental.unit where status = 'active' order by unit_type, unit_id`,
       ),
       db.execute<{ rc_id: string; rc_type: string | null; location: string | null; status: string | null }>(
         sql`select rc_id, rc_type, location, status from rental.rent_contract order by rc_start_date desc nulls last, rc_id limit 200`,
       ),
+      db.execute<{ employee_id: string; full_name: string }>(
+        sql`select employee_id, full_name from hr.employee
+            where lower(role) = 'operator' and is_active order by full_name`,
+      ),
     ]);
     res.json({
+      operators: operators.rows.map((o) => ({ employeeId: o.employee_id, name: o.full_name })),
       units: units.rows.map((u) => ({ unitId: u.unit_id, unitType: u.unit_type })),
       contracts: contracts.rows.map((c) => ({ rcId: c.rc_id, rcType: c.rc_type, location: c.location, status: c.status })),
     });
@@ -115,6 +120,7 @@ recordsRouter.get(
 export const RC_TYPES = ["Retail", "Contract", "Standby", "Work-maintenance"] as const;
 
 const workOrderBody = z.object({
+  operatorId: z.string().uuid("Operator wajib dipilih"),
   unitId: text(100).min(1, "Unit wajib dipilih"),
   rcType: z.enum(RC_TYPES, { message: "Tipe work order tidak valid" }),
   location: text(500).min(1, "Lokasi wajib diisi"),
@@ -136,10 +142,15 @@ recordsRouter.post(
     const finish = b.finishDate ?? b.startDate;
     if (finish < b.startDate) throw new HttpError(400, "Tanggal selesai tidak boleh sebelum tanggal mulai");
     const userId = req.session.userId!;
-    const name = await actor(userId);
 
     const result = await db.transaction(async (tx) => {
       const unit = await activeUnit(tx, b.unitId);
+      // Operator harus karyawan aktif ber-role operator. Nama operator juga disimpan di kolom "user" (kompatibel dengan v1).
+      const op = await tx.execute<{ full_name: string }>(
+        sql`select full_name from hr.employee where employee_id = ${b.operatorId}::uuid and lower(role) = 'operator' and is_active`,
+      );
+      if (op.rows.length === 0) throw new HttpError(400, "Operator tidak ditemukan atau tidak aktif");
+      const operatorName = op.rows[0].full_name;
       if (b.rcId) {
         const rc = await tx.execute(sql`select 1 from rental.rent_contract where rc_id = ${b.rcId}`);
         if (rc.rows.length === 0) throw new HttpError(400, `Kontrak ${b.rcId} tidak ditemukan`);
@@ -148,9 +159,9 @@ recordsRouter.post(
       const woId = await nextDailyId(tx, "WO");
       await tx.execute(
         sql`insert into rental.work_order
-              (wo_id, "user", created_by, location, rc_type, wo_start_date, wo_finish_date, unit_id, unit_type, qty, time, volume, pipe, remarks, rc_id)
+              (wo_id, "user", operator, created_by, location, rc_type, wo_start_date, wo_finish_date, unit_id, unit_type, qty, time, volume, pipe, remarks, rc_id)
             values
-              (${woId}, ${name}, ${userId}::uuid, ${b.location}, ${b.rcType}, ${b.startDate}::date, ${finish}::date, ${unit.unit_id}, ${unit.unit_type},
+              (${woId}, ${operatorName}, ${b.operatorId}::uuid, ${userId}::uuid, ${b.location}, ${b.rcType}, ${b.startDate}::date, ${finish}::date, ${unit.unit_id}, ${unit.unit_type},
                ${b.qty}, ${b.time ?? null}, ${b.volume ?? 0}, ${b.pipe}, ${b.remarks}, ${b.rcId})`,
       );
 
@@ -169,7 +180,7 @@ recordsRouter.post(
       ];
 
       await audit(tx, userId, "work_order:create", "work_order", woId, {
-        unit_id: unit.unit_id, rc_type: b.rcType, location: b.location, start: b.startDate, finish, rc_id: b.rcId,
+        unit_id: unit.unit_id, operator: b.operatorId, rc_type: b.rcType, location: b.location, start: b.startDate, finish, rc_id: b.rcId,
       });
       return { id: woId, unitId: unit.unit_id, startDate: b.startDate, finishDate: finish, warnings };
     });

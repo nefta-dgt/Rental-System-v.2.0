@@ -7,6 +7,10 @@ import Dropdown from '../../components/Dropdown'
 export const inputClass =
   'w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm outline-none transition-colors hover:border-slate-400 focus:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-500/40'
 
+// Kolom read-only (otomatis): abu-abu, tanpa efek hover/fokus, supaya jelas tidak bisa diisi.
+export const readOnlyClass =
+  'w-full cursor-default rounded-lg border border-slate-200 bg-slate-100 px-3 py-1.5 text-sm text-slate-500 outline-none'
+
 export const MAX_RANGE_DAYS = 31
 
 const pad = (n: number) => String(n).padStart(2, '0')
