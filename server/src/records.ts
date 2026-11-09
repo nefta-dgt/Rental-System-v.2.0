@@ -232,17 +232,18 @@ const listQuery = z.object({
 });
 
 type WoRow = {
-  wo_id: string; operator: string | null; operator_name: string | null; unit_id: string | null; unit_type: string | null;
+  wo_id: string; timestamp: string | null; created_by_name: string | null; operator: string | null; operator_name: string | null; unit_id: string | null; unit_type: string | null;
   rc_type: string | null; rc_id: string | null; location: string | null; start_date: string | null; finish_date: string | null;
   qty: number | null; time: number | null; volume: string | null; pipe: string | null; remarks: string | null;
 };
 
-const woSelect = sql`select w.wo_id, w.operator, coalesce(e.full_name, w."user") as operator_name, w.unit_id, w.unit_type, w.rc_type, w.rc_id,
+const woSelect = sql`select w.wo_id, w."timestamp"::text as timestamp, cu.employee_name as created_by_name, w.operator, coalesce(e.full_name, w."user") as operator_name, w.unit_id, w.unit_type, w.rc_type, w.rc_id,
     w.location, w.wo_start_date::text as start_date, w.wo_finish_date::text as finish_date, w.qty, w.time, w.volume::text as volume, w.pipe, w.remarks
-  from rental.work_order w left join hr.employee e on e.employee_id = w.operator`;
+  from rental.work_order w left join hr.employee e on e.employee_id = w.operator
+  left join hr.users cu on cu.user_id = w.created_by`;
 
 const toWo = (r: WoRow) => ({
-  id: r.wo_id, operatorId: r.operator, operatorName: r.operator_name, unitId: r.unit_id, unitType: r.unit_type,
+  id: r.wo_id, timestamp: r.timestamp, createdByName: r.created_by_name, operatorId: r.operator, operatorName: r.operator_name, unitId: r.unit_id, unitType: r.unit_type,
   rcType: r.rc_type, rcId: r.rc_id, location: r.location, startDate: r.start_date, finishDate: r.finish_date ?? r.start_date,
   qty: r.qty, time: r.time, volume: r.volume === null ? null : Number(r.volume), pipe: r.pipe, remarks: r.remarks,
 });

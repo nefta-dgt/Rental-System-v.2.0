@@ -9,7 +9,7 @@ Catatan ini mencatat aturan setiap endpoint server v2. **Wajib diperbarui setiap
 - Semua perubahan data dicatat di `access.audit_log`.
 - Kolom `rental.work_order.created_by` baru ada di staging, jadi endpoint pembuat WO belum bisa jalan di live (lihat Planning).
 
-Terakhir diperbarui: 2026-11-09 (cari, lihat, ubah, hapus work order).
+Terakhir diperbarui: 2026-11-09 (item work order kini memuat `timestamp` dan `createdByName`).
 
 ---
 
@@ -89,7 +89,7 @@ Terakhir diperbarui: 2026-11-09 (cari, lihat, ubah, hapus work order).
 - Izin: `work_order:view`.
 - Query (semua opsional): `q` (maks 100 karakter; dicari tidak peka huruf besar/kecil di nomor WO, unit, nama operator, location, RC id, remarks), `rcType`, `from` dan `to` (`YYYY-MM-DD`; WO ikut jika rentang tanggalnya beririsan), `page` (default 1), `pageSize` (default 25, maks 100).
 - Urutan: tanggal mulai terbaru dulu. `to` tidak boleh sebelum `from`.
-- Sukses `200`: `{ items[], total, page, pageSize }`. Tiap item: `id, operatorId, operatorName, unitId, unitType, rcType, rcId, location, startDate, finishDate, qty, time, volume, pipe, remarks`. Tanggal berbentuk teks `YYYY-MM-DD`.
+- Sukses `200`: `{ items[], total, page, pageSize }`. Tiap item: `id, timestamp, createdByName, operatorId, operatorName, unitId, unitType, rcType, rcId, location, startDate, finishDate, qty, time, volume, pipe, remarks`. Tanggal berbentuk teks `YYYY-MM-DD`. `timestamp` = waktu WO dibuat (teks dari database); `createdByName` = nama akun (`hr.users.employee_name`) dari `created_by`, `null` untuk WO dari v1/bot. `operatorName` berasal dari `hr.employee` lewat kolom `operator`, bukan kolom `user`.
 - Error: `400` (format tanggal/rentang salah), `401`, `403`.
 
 ### GET `/api/work-orders/:id`

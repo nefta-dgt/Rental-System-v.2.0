@@ -43,6 +43,8 @@ export type DayRecordInput = { unitId: string; startDate: string; finishDate?: s
 export type WorkOrderCreated = { id: string; unitId: string; startDate: string; finishDate: string; warnings: string[] }
 export type WorkOrderRow = {
   id: string
+  timestamp: string | null
+  createdByName: string | null
   operatorId: string | null
   operatorName: string | null
   unitId: string | null
