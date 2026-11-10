@@ -69,6 +69,32 @@ export type StandbyRange = { unitId: string; unitType: string | null; startDate:
 export type StandbyRangeList = { items: StandbyRange[]; total: number; page: number; pageSize: number }
 export type DayRecordCreated = { unitId: string; startDate: string; finishDate: string; count: number }
 
+export type ApprovalRow = {
+  id: string; createdAt: string | null; tsNo: string | null; unitId: string | null; unitType: string | null; date: string | null; customer: string | null
+  location: string | null; operator: string | null; volume: string | null; confidence: number | null; doubtfulFields: string | null; hasImage: boolean
+}
+export type ApprovalList = { items: ApprovalRow[]; total: number; page: number; pageSize: number }
+export type Person = { employeeId: string; name: string }
+export type ApprovalWorkOrder = { id: string; location: string | null; rcType: string | null; operatorId: string | null; start: string; finish: string; hasTimesheetThatDay: boolean }
+export type ApprovalDetail = {
+  id: string; status: string; createdAt: string | null; confidence: number | null; doubtfulFields: string | null; hasImage: boolean
+  fields: Record<'tsNo' | 'date' | 'unitId' | 'unitType' | 'customer' | 'company' | 'location' | 'dispatch' | 'arrive' | 'start' | 'finish' | 'returnTime' | 'totalHours' | 'volume' | 'pipe' | 'operator' | 'notes' | 'phone' | 'pic' | 'batchingPlant', string | null> & { crew: string[] }
+  resolved: { unitId: string | null; date: string | null }
+  prefill: { date: string; dispatch: string; arrive: string; start: string; finish: string; returnTime: string; volume: string }
+  workOrders: ApprovalWorkOrder[]
+  operators: Person[]
+  crew: (Person & { nik: string | null })[]
+  units: { unitId: string; unitType: string | null }[]
+  statuses: string[]
+  suggested: { operatorId: string | null; crewIds: string[] }
+}
+export type ApprovalFilter = { q?: string; page?: number; pageSize?: number }
+export type ApproveInput = {
+  woId: string; tsNo: string; operatorId: string; unitId: string; date: string; status: string; volume: number; pipe: string
+  dispatch: string; arrive: string; start: string; finish: string; returnTime: string; distanceKm: number | null
+  customer: string; location: string; batchingPlant: string; notes: string; crewIds: string[]
+}
+
 export class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -121,6 +147,17 @@ export const api = {
   },
   createMaintenance: (b: DayRecordInput) => request<DayRecordCreated>('/api/maintenance', { method: 'POST', body: JSON.stringify(b) }),
   createStandby: (b: DayRecordInput) => request<DayRecordCreated>('/api/standby', { method: 'POST', body: JSON.stringify(b) }),
+  listApprovals: (f: ApprovalFilter) => {
+    const qs = new URLSearchParams()
+    Object.entries(f).forEach(([k, v]) => v !== undefined && v !== '' && qs.set(k, String(v)))
+    return request<ApprovalList>(`/api/timesheet-approvals?${qs}`)
+  },
+  listApprovalWorkOrders: (unitId: string, date: string) =>
+    request<{ items: ApprovalWorkOrder[] }>(`/api/timesheet-approvals/work-orders?unitId=${encodeURIComponent(unitId)}&date=${encodeURIComponent(date)}`),
+  getApproval: (id: string) => request<ApprovalDetail>(`/api/timesheet-approvals/${encodeURIComponent(id)}`),
+  approveTimesheet: (id: string, b: ApproveInput) =>
+    request<{ id: string; status: string; tsId: string; workOrderId: string; unitId: string; date: string }>(`/api/timesheet-approvals/${encodeURIComponent(id)}/approve`, { method: 'POST', body: JSON.stringify(b) }),
+  declineTimesheet: (id: string) => request<{ id: string; status: string }>(`/api/timesheet-approvals/${encodeURIComponent(id)}/decline`, { method: 'POST', body: '{}' }),
   schedule: (from: string, to: string) =>
     request<Schedule>(`/api/schedule?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
 }

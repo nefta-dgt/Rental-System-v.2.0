@@ -92,7 +92,8 @@ Urutan kalau nanti dijalankan (tiap file punya `.rollback.sql`; backup dulu, saa
 7. `2026-11-10_add_timesheet_create_permission.sql`: izin `timesheet:create` (untuk timesheet standby).
 8. `2026-11-10_timesheet_standby_id.sql`: kolom `rental.timesheet.standby_id` (nullable, FK ke `standby_log(id)` `ON DELETE RESTRICT`, `UNIQUE`). Tidak mengubah baris yang ada; v1 tidak terpengaruh.
 9. `2026-11-10_timesheet_one_parent_check.sql`: constraint `timesheet_one_parent_check` (`num_nonnulls(work_order_id, standby_id) = 1`). **JALANKAN PALING AKHIR**, jangan sebelum v1 disesuaikan atau dipensiunkan: approve v1 untuk timesheet tanpa WO akan ditolak (rollback, buffer tetap pending, tampil sebagai error 500 umum), dan `linkTimesheetToWorkOrder` pada timesheet standby juga gagal. Di live saat ini 0 timesheet tanpa WO dari 1384 (sudah dibersihkan user), jadi validasi lolos.
-10. Belum dibuat: hapus kolom `rental.work_order.user` (lihat catatan di atas; tidak bisa dibatalkan, jangan bersamaan dengan langkah 5).
+10. `2026-11-11_add_timesheet_approval_permissions.sql`: izin `timesheet:view` dan `timesheet:approve` (menu Timesheet Approval). Hanya menambah baris izin. Server v2 di live juga butuh variabel `UPLOADS_DIR` (folder gambar OCR milik v1) supaya gambar tampil.
+11. Belum dibuat: hapus kolom `rental.work_order.user` (lihat catatan di atas; tidak bisa dibatalkan, jangan bersamaan dengan langkah 5).
 
 Catatan:
 - Sebelum migrasi dijalankan, kode v2 yang dipasang ke live akan error (login, daftar, buat). Jalankan migrasi dulu, baru pasang kode.

@@ -11,7 +11,7 @@ import { db, users } from "./db.js";
 // - work order: tidak memblokir tumpang tindih (v1 juga begitu), hanya memberi peringatan.
 // Semua perubahan dicatat di access.audit_log.
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_RANGE_DAYS = 31;
@@ -26,7 +26,7 @@ const optionalText = (max: number) => text(max).optional().transform((v) => (v ?
 
 const dayCount = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / DAY_MS) + 1;
 
-class HttpError extends Error {
+export class HttpError extends Error {
   constructor(
     public status: number,
     message: string,
@@ -36,7 +36,7 @@ class HttpError extends Error {
   }
 }
 
-const handle =
+export const handle =
   (fn: (req: Parameters<RequestHandler>[0], res: Parameters<RequestHandler>[1]) => Promise<void>): RequestHandler =>
   async (req, res) => {
     try {
@@ -66,7 +66,7 @@ async function activeUnit(tx: Tx, unitId: string) {
   return unit;
 }
 
-async function audit(tx: Tx, userId: string, key: string, entity: string, entityId: string, after: unknown, before: unknown = null) {
+export async function audit(tx: Tx, userId: string, key: string, entity: string, entityId: string, after: unknown, before: unknown = null) {
   await tx.execute(
     sql`insert into access.audit_log (user_id, permission_key, entity, entity_id, before, after)
         values (${userId}::uuid, ${key}, ${entity}, ${entityId}, ${before === null ? null : JSON.stringify(before)}::jsonb, ${after === null ? null : JSON.stringify(after)}::jsonb)`,

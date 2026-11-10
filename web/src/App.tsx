@@ -6,6 +6,8 @@ import Home from './pages/Home'
 import Login from './pages/Login'
 import DayRecordList from './pages/records/DayRecordList'
 import StandbyList from './pages/records/StandbyList'
+import TimesheetApprovalList from './pages/timesheet/ApprovalList'
+import TimesheetApprovalDetail from './pages/timesheet/ApprovalDetail'
 import DayRecordForm from './pages/records/DayRecordForm'
 import WorkOrderForm from './pages/records/WorkOrderForm'
 import WorkOrderList from './pages/records/WorkOrderList'
@@ -49,6 +51,11 @@ export default function App() {
               </Route>
               <Route element={<RequirePermission permission="standby:create" />}>
                 <Route path="/schedule/standby/new" element={<DayRecordForm kind="standby" />} />
+              </Route>
+              <Route element={<RequirePermission permission="timesheet:view" />}>
+                <Route path="/timesheet" element={<Navigate to="/timesheet/approval" replace />} />
+                <Route path="/timesheet/approval" element={<TimesheetApprovalList />} />
+                <Route path="/timesheet/approval/:id" element={<TimesheetApprovalDetail />} />
               </Route>
             </Route>
           </Route>
