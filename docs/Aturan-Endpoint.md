@@ -7,9 +7,9 @@ Catatan ini mencatat aturan setiap endpoint server v2. **Wajib diperbarui setiap
 - Autentikasi: sesi cookie (`connect.sid`, httpOnly, 8 jam), disimpan di memori server.
 - Izin dicek lewat `requirePermission(key)` ([server/src/access.ts](../server/src/access.ts)). Belum login → `401`, tidak punya izin → `403`.
 - Semua perubahan data dicatat di `access.audit_log`.
-- Kolom `created_by` pada `rental.work_order`, `rental.maintenance`, dan `rental.standby_log` baru ada di staging, jadi endpoint buat dan daftar untuk ketiganya belum bisa jalan di live (lihat Planning).
+- Kolom `created_by` pada `rental.work_order`, `rental.maintenance`, `rental.standby_log`, serta `rental.timesheet.standby_id`, baru ada di staging, jadi endpoint buat dan daftar untuk ketiganya belum bisa jalan di live (lihat Planning).
 
-Terakhir diperbarui: 2026-11-11 (Timesheet Approval: `/api/timesheet-approvals`).
+Terakhir diperbarui: 2026-11-11 (Timesheet Approval: `/api/timesheet-approvals`; timesheet standby: POST `/api/standby/:id/timesheet`, tanpa work order).
 
 ---
 
@@ -220,6 +220,34 @@ Sumber data: `rental.buffer_timesheet` (hasil OCR dari WhatsApp/n8n, ditulis v1)
 - Sukses `200`: `{ id, status: "REJECTED" }`. Error: `404`, `409`.
 
 ---
+
+## Timesheet standby
+
+### POST `/api/standby/:id/timesheet`
+- Izin: `timesheet:create` (migrasi `server/migrations/2026-11-10_add_timesheet_create_permission.sql`, staging saja; Superadmin otomatis lewat `*`).
+- Membuat **timesheet berstatus `Standby`** untuk satu hari standby (`:id` = `rental.standby_log.id`). Timesheet menunjuk standby lewat kolom `timesheet.standby_id` dan **tidak** memakai work order (`work_order_id` dikosongkan). Aturan "tepat satu" dari `work_order_id` atau `standby_id` dijaga constraint `timesheet_one_parent_check`.
+- Butuh migrasi `2026-11-10_timesheet_standby_id.sql` (kolom `standby_id`: boleh kosong, FK `ON DELETE RESTRICT`, `UNIQUE`). Constraint `2026-11-10_timesheet_one_parent_check.sql` dipasang paling akhir dan bukan syarat endpoint ini. Keduanya baru ada di staging.
+- Body:
+
+| Field | Aturan |
+|---|---|
+| `tsId` | wajib, maks 100 karakter; nomor timesheet harus belum dipakai |
+| `operatorId` | wajib, UUID karyawan aktif ber-role `operator` |
+| `crewIds` | opsional, maks 5 UUID karyawan aktif ber-role `crew`; tidak boleh ganda dan tidak boleh sama dengan operator |
+| `time` | opsional, 0 sampai 9999, default 0 |
+| `volume` | opsional, 0 sampai 99.999.999, default 0 |
+| `remarks` | opsional, maks 2000 karakter |
+
+- Perilaku (satu transaksi, semua-atau-tidak-sama-sekali):
+  - Unit, tanggal, dan tipe unit diambil dari baris standby (tidak dikirim dari form). Kolom `operator` diisi nama operator, kolom `user` diisi nama akun yang login (ikut tercatat sebagai `changed_by` di `ts_log`).
+  - Satu hari standby hanya boleh punya satu timesheet (`409` jika sudah ada).
+  - Satu OPERATOR dan nol sampai lima CREW dimasukkan ke `operator_and_crew_assignment`, sama seperti v1.
+  - Tidak memblokir jika unit dan tanggal itu sudah punya timesheet lain (Work/Standby); hanya muncul di `warnings`.
+  - Trigger `fn_log_timesheet_changes` menulis ke `ts_log` tanpa awalan skema, jadi transaksi memasang `set local search_path to rental, public`. Fungsi trigger di database tidak diubah.
+  - Dicatat di `access.audit_log` (`timesheet:create`).
+- Sukses `201`: `{ tsId, standbyId, unitId, date, status, operatorName, crewCount, warnings[] }`.
+- Error: `400` (validasi, operator atau crew tidak valid, ID standby bukan angka), `404` (hari standby tidak ada), `409` (standby sudah punya timesheet, atau nomor timesheet dobel), `401`, `403`.
+- Belum ada halaman web untuk endpoint ini.
 
 ## Yang belum ada
 - Detail, ubah, dan hapus untuk maintenance dan standby (daftar sudah ada).
