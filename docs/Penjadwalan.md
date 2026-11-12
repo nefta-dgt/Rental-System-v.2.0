@@ -1,10 +1,41 @@
-# Dokumentasi Penjadwalan (v2)
+# Dokumentasi dan Jurnal Penjadwalan (v2)
 
 Dokumen ini menjelaskan fitur **Penjadwalan** di Rental System v2: apa yang bisa dilakukan, aturan bisnisnya, halaman dan izin yang terlibat, serta data di baliknya. Untuk detail teknis setiap endpoint, lihat [Aturan-Endpoint.md](Aturan-Endpoint.md). Untuk keputusan dan daftar yang masih terbuka, lihat [Rental-System-v2-Planning.md](Rental-System-v2-Planning.md).
 
-Terakhir diperbarui: 2026-11-12 (sesuai `main` setelah PR #11).
+Dokumen ini juga berfungsi sebagai **jurnal**: setiap perubahan atau penambahan pada fitur penjadwalan dicatat di bagian [Jurnal perubahan](#jurnal-perubahan) berikut tanggalnya.
+
+Terakhir diperbarui: **2026-11-12** (lihat entri paling atas di Jurnal perubahan).
 
 > **Status:** semua migrasi database v2 baru dijalankan di **staging** (`company_staging`), belum di database live. Kode v2 membutuhkan migrasi itu, jadi belum bisa dipakai di live. Daftar dan urutannya ada di bagian "Open list: migrasi yang BELUM dijalankan di live" pada dokumen Planning.
+
+---
+
+## Jurnal perubahan
+
+**Aturan pemakaian** (wajib diikuti setiap kali fitur penjadwalan berubah atau bertambah):
+1. Tambah satu entri di tabel di bawah, **paling atas = terbaru**, dengan tanggal perubahan (`YYYY-MM-DD`).
+2. Perbarui bagian dokumen yang ikut berubah (aturan, halaman, izin, data, API, batasan).
+3. Ubah baris "Terakhir diperbarui" di atas.
+4. Lakukan ini di perubahan (commit atau PR) yang sama dengan kodenya. Kalau endpoint ikut berubah, perbarui juga [Aturan-Endpoint.md](Aturan-Endpoint.md).
+
+Yang termasuk "penjadwalan": halaman Jadwal unit, Work Order, Maintenance, Standby, navigasi atau menu bagian Penjadwalan, serta izin dan data yang dipakainya.
+
+Tanggal pada entri sebelum 2026-11-12 diambil dari riwayat git (tanggal merge PR).
+
+| Tanggal | Perubahan | Rujukan |
+|---|---|---|
+| 2026-11-12 | Dokumen ini dibuat dan dijadikan jurnal. Riwayat sebelumnya diisi ulang dari git. | branch `docs/penjadwalan` |
+| 2026-11-09 | **Daftar Standby digabung per rentang:** hari berurutan untuk satu unit tampil sebagai satu baris dengan kolom Periode, Lama, dan Status (Akan datang, Berlangsung, Selesai). Endpoint baru `GET /api/standby/ranges`. | PR #10 |
+| 2026-11-09 | **Pembuat untuk maintenance dan standby:** kolom `created_by` ditambahkan di `rental.maintenance` dan `rental.standby_log`, diisi otomatis dari akun yang login, dan tampil di daftar. | PR #9 |
+| 2026-11-09 | **Halaman awal Maintenance dan Standby berupa daftar** (baru kemudian tombol Buat). Endpoint baru `GET /api/maintenance` dan `GET /api/standby` dengan filter, serta izin `maintenance:view` dan `standby:view`. | PR #8 |
+| 2026-11-09 | **Daftar Work Order dirapikan:** kolom disusun ulang, tabel lebar penuh, huruf besar-kecil biasa, filter unit, operator, dan satu tanggal, format tanggal, bilah bawah yang menempel. | PR #7 |
+| 2026-11-09 | **Navigasi baru:** menu utama di sidebar dan sub menu sebagai tab di header (dari satu sumber `menu.ts`). **Beranda menampilkan Jadwal unit**, tab Jadwal dihapus dari Penjadwalan, dan `/schedule` dialihkan ke Beranda. | PR #6 |
+| 2026-11-09 | **Work Order lengkap:** daftar dengan pencarian, halaman ubah, dan hapus (izin `work_order:view`, `edit`, `delete`; hapus ditolak kalau sudah dipakai timesheet). Form WO mendapat isian **Operator**, **Unit type** otomatis (hanya baca), serta tipe WO dan nilai awal waktu, volume, pipa dari `unit_price_default`. Kolom `created_by` ditambahkan di `rental.work_order`. | PR #6 |
+| 2026-11-08 | **Sidebar:** nama user, peran, dan tombol Keluar dipindah ke pojok kiri bawah. | merge `fix/sidebar-user-bottom` |
+| 2026-11-08 | **Jadwal unit melebar** mengisi area konten di samping sidebar. | merge `fix/schedule-full-width` |
+| 2026-11-08 | **Halaman buat Work Order, Maintenance, dan Standby** dengan endpoint pembuatan, aturan bentrok, nomor WO otomatis, audit log, dan submenu di sidebar. Izin `work_order:create`, `maintenance:create`, `standby:create`. | PR #5 |
+| 2026-11-08 | **Hak akses:** schema `access` (izin, peran, pengecualian per user, audit log). Menu dan halaman jadwal mengikuti izin `schedule:view`. | PR #4 |
+| 2026-11-08 | **Jadwal unit mingguan (Gantt):** endpoint `GET /api/schedule`, rentang tanggal pilihan maksimal 7 hari, batang per status berlabel `Tipe : Lokasi`, dikelompokkan per tipe unit, header tabel tetap, filter tipe unit (dropdown) dan pencarian unit, popup detail, penanda bentrok, dan lokasi dengan huruf besar-kecil biasa. | PR #2 |
 
 ---
 
