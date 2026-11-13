@@ -53,7 +53,12 @@ export const MENU: MenuItem[] = [
     ],
   },
   { key: 'work-order', label: 'Work Order', soon: true },
-  { key: 'timesheet', label: 'Timesheet', soon: true },
+  {
+    key: 'timesheet',
+    label: 'Timesheet',
+    prefix: '/timesheet',
+    children: [{ label: 'Approval', to: '/timesheet/approval', anyOf: ['timesheet:view', 'timesheet:approve'], match: '/timesheet/approval' }],
+  },
   { key: 'rent-contract', label: 'Rent Contract', soon: true },
   { key: 'timesheet-valuation', label: 'Timesheet Valuation', soon: true },
 ]

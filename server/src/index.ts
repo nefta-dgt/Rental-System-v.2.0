@@ -7,6 +7,7 @@ import { z } from "zod";
 import { db, rolePermissions, users } from "./db.js";
 import { scheduleRouter } from "./schedule.js";
 import { recordsRouter } from "./records.js";
+import { timesheetApprovalRouter } from "./timesheetApproval.js";
 import { effectivePermissionKeys, requirePermission } from "./access.js";
 
 declare module "express-session" {
@@ -76,6 +77,9 @@ app.get("/api/me", async (req, res) => {
 
 // Jadwal hanya bisa dilihat user dengan izin schedule:view. Hak ubah menyusul di endpoint ubah, dengan schedule:edit.
 app.use("/api/schedule", requirePermission("schedule:view"), scheduleRouter);
+
+// Timesheet Approval (buffer_timesheet). Izin dicek per endpoint di dalam router.
+app.use("/api/timesheet-approvals", timesheetApprovalRouter);
 
 // Membuat work order, maintenance, dan standby. Izin dicek per endpoint di dalam router.
 app.use("/api", recordsRouter);

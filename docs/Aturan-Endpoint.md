@@ -9,7 +9,7 @@ Catatan ini mencatat aturan setiap endpoint server v2. **Wajib diperbarui setiap
 - Semua perubahan data dicatat di `access.audit_log`.
 - Kolom `created_by` pada `rental.work_order`, `rental.maintenance`, dan `rental.standby_log` baru ada di staging, jadi endpoint buat dan daftar untuk ketiganya belum bisa jalan di live (lihat Planning).
 
-Terakhir diperbarui: 2026-11-10 (GET `/api/standby/ranges`: standby digabung per rentang).
+Terakhir diperbarui: 2026-11-11 (Timesheet Approval: `/api/timesheet-approvals`).
 
 ---
 
@@ -157,6 +157,67 @@ Aturan sama untuk keduanya: satu baris per unit per hari, rentang maksimal 31 ha
 - Tidak boleh bentrok dengan work order, maintenance, atau standby lain pada tanggal itu.
 - Setiap baris yang dibuat mengisi `created_by` (akun yang login); kolom `user` tetap diisi nama akun seperti sebelumnya.
 - Sukses `201` dan error sama seperti maintenance.
+
+## Timesheet Approval
+
+Sumber data: `rental.buffer_timesheet` (hasil OCR dari WhatsApp/n8n, ditulis v1). Hanya yang berstatus `PENDING` muncul di daftar. Kode: [server/src/timesheetApproval.ts](../server/src/timesheetApproval.ts).
+
+### GET `/api/timesheet-approvals`
+- Izin: `timesheet:view`.
+- Query: `q` (maks 100; cocok sebagian pada nomor TS, unit, pelanggan, operator), `page` (default 1), `pageSize` (1–100, default 25).
+- Sukses `200`: `{ items[], total, page, pageSize }`; item: `{ id, createdAt, tsNo, unitId, unitType, date, customer, location, operator, volume, confidence, doubtfulFields, hasImage }`. Nilai berupa teks OCR apa adanya. Urut `created_at` terbaru.
+
+### GET `/api/timesheet-approvals/:id`
+- Izin: `timesheet:view`.
+- Sukses `200`: isi OCR (`fields`), `status`, `confidence`, `doubtfulFields`, `hasImage`, plus bahan untuk approve:
+  - `resolved`: `{ unitId, date }` = unit master (dicocokkan tanpa spasi/tanda baca, tidak peka huruf besar/kecil, mis. "K 20" = `K-20`) dan tanggal ISO. `null` kalau tidak terbaca.
+  - `workOrders[]`: work order unit itu yang periodenya mencakup tanggal timesheet (`hasTimesheetThatDay` menandai yang sudah punya timesheet hari itu).
+  - `prefill`: nilai awal form yang sudah dirapikan (tanggal ISO, jam `HH:MM`, volume).
+  - `operators[]`, `crew[]` (dengan `nik`): karyawan aktif ber-role operator/crew. `units[]`: semua unit master. `statuses[]`: pilihan status timesheet.
+  - `suggested`: `{ operatorId, crewIds }` dari kecocokan nama persis di OCR (boleh kosong).
+- Error: `404`.
+
+### GET `/api/timesheet-approvals/work-orders`
+- Izin: `timesheet:view`.
+- Query: `unitId`, `date` (`YYYY-MM-DD`). Mengembalikan `{ items[] }`: work order unit itu yang periodenya mencakup tanggal, `{ id, location, rcType, operatorId, start, finish, hasTimesheetThatDay }`. Parameter tidak valid → `items` kosong. Dipakai form saat unit atau tanggal diubah.
+
+### GET `/api/timesheet-approvals/:id/image`
+- Izin: `timesheet:view`.
+- Mengirim file gambar OCR dari folder `UPLOADS_DIR` (env server). Hanya nama file dari `image_filename` yang dipakai, jadi tidak bisa keluar dari folder itu.
+- Error: `404` (tidak ada gambar, `UPLOADS_DIR` belum diatur, atau file tidak ada di folder).
+
+### POST `/api/timesheet-approvals/:id/approve`
+- Izin: `timesheet:approve`.
+- Body (nilai OCR boleh dikoreksi di form, seperti Review Document di v1):
+
+| Field | Aturan |
+|---|---|
+| `woId` | wajib; work order harus ada, untuk unit yang sama, periodenya mencakup `date`, dan operatornya (kalau terisi) sama dengan `operatorId` |
+| `tsNo` | wajib, maks 100; belum boleh ada di `rental.timesheet` |
+| `operatorId` | wajib, UUID karyawan aktif ber-role operator (nama lengkapnya disimpan di kolom `operator`) |
+| `unitId` | wajib; harus ada di `rental.unit` |
+| `date` | wajib, `YYYY-MM-DD`, 2020-01-01 sampai 2100-12-31 |
+| `status` | `Work`, `Standby`, `Failed`, atau `Failed-maintenance` (sama dengan pilihan v1) |
+| `volume` | wajib, angka 0–99.999.999 |
+| `start`, `finish` | wajib, `HH:MM`; total jam kerja dihitung server dari keduanya (lewat tengah malam +24 jam, 2 desimal) |
+| `dispatch`, `arrive`, `returnTime` | opsional, `HH:MM` |
+| `distanceKm` | opsional, angka atau `null` |
+| `pipe`, `customer`, `location`, `batchingPlant`, `notes` | opsional teks |
+| `crewIds` | opsional, maks 4 UUID karyawan aktif ber-role crew; tidak boleh dobel atau sama dengan operator |
+
+- Perilaku (satu transaksi, termasuk status buffer; v1 mengubah status di luar transaksi):
+  - Baris buffer dikunci dan harus `PENDING`.
+  - Membuat `rental.timesheet` (`unit_type` dari master unit, `time` = total jam hasil hitung), `operator_and_crew_assignment` (OPERATOR dan CREW), lalu buffer menjadi `APPROVED` dengan `wo_id`.
+  - Perusahaan, PIC, dan Phone dari OCR tidak disimpan (v1 juga tidak menyimpannya).
+  - Dicatat di `access.audit_log` (`timesheet:approve`).
+- Sukses `200`: `{ id, status: "APPROVED", tsId, workOrderId, unitId, date }`.
+- Error: `400` (validasi, unit/WO/operator/crew tidak valid, WO beda unit, tanggal di luar periode WO, operator beda dengan operator WO), `404`, `409` (sudah di-approve/decline, nomor TS sudah ada, atau WO itu sudah punya timesheet di tanggal tsb).
+- Timesheet tanpa work order tidak bisa dibuat lewat jalur ini (v1 bisa); ini sejalan dengan aturan "tepat satu" work order atau standby.
+
+### POST `/api/timesheet-approvals/:id/decline`
+- Izin: `timesheet:approve`.
+- Mengubah status buffer menjadi `REJECTED` (baris tidak dihapus, sama dengan v1). Hanya dari `PENDING`.
+- Sukses `200`: `{ id, status: "REJECTED" }`. Error: `404`, `409`.
 
 ---
 
