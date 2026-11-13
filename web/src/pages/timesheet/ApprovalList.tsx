@@ -94,6 +94,9 @@ export default function ApprovalList() {
                     <Link to={`/timesheet/approval/${encodeURIComponent(r.id)}`} className="rounded-lg border border-slate-300 px-3 py-1 text-slate-700 hover:bg-slate-50">
                       Periksa
                     </Link>
+                    <button type="button" className="ml-2 rounded-lg border border-red-300 px-3 py-1 text-red-600 hover:bg-red-50">
+                      Buang
+                    </button>
                   </td>
                 </tr>
               )

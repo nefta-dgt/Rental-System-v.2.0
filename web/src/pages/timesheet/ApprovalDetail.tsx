@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Dropdown from '../../components/Dropdown'
-import { api, type ApprovalDetail } from '../../api'
+import WorkOrderSearchDrawer from '../../components/WorkOrderSearchDrawer'
+import { api, type ApprovalDetail, type WorkOrderRow } from '../../api'
 import { useCan } from '../../auth'
 import { formatDate, properCase } from '../../text'
 import { Result, inputClass, readOnlyClass } from '../records/shared'
@@ -73,6 +74,7 @@ function Review({ id, d }: { id: string; d: ApprovalDetail }) {
   const f = d.fields
   const p = d.prefill
 
+  const [woSearchOpen, setWoSearchOpen] = useState(false)
   const [tsNo, setTsNo] = useState(f.tsNo ?? '')
   const [operatorId, setOperatorId] = useState(d.suggested.operatorId ?? '')
   const [unitId, setUnitId] = useState(d.resolved.unitId ?? '')
@@ -92,6 +94,8 @@ function Review({ id, d }: { id: string; d: ApprovalDetail }) {
   const [notes, setNotes] = useState(f.notes ?? '')
   const [crew, setCrew] = useState<string[]>(Array.from({ length: CREW_SLOTS }, (_, i) => d.suggested.crewIds[i] ?? ''))
   const [woId, setWoId] = useState('')
+  // WO yang dipilih lewat drawer; bisa di luar daftar WO untuk unit dan tanggal form.
+  const [picked, setPicked] = useState<WorkOrderRow | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [imageFailed, setImageFailed] = useState(false)
 
@@ -106,17 +110,52 @@ function Review({ id, d }: { id: string; d: ApprovalDetail }) {
     initialData: unitId === (d.resolved.unitId ?? '') && date === p.date ? { items: d.workOrders } : undefined,
   })
   const woList = wos.data?.items ?? []
+  const pickedHere = !!picked && picked.id === woId && picked.unitId === unitId
   useEffect(() => {
     if (wos.isFetching) return
-    if (woId && !woList.some((w) => w.id === woId)) setWoId('')
+    if (woId && !woList.some((w) => w.id === woId) && !pickedHere) setWoId('')
     else if (!woId && woList.length === 1) setWoId(woList[0].id)
-  }, [woList, woId, wos.isFetching])
+    else if (!woId && woList.length > 1) {
+      // Beberapa kandidat: pilih otomatis hanya kalau tepat satu yang operatornya sama. Kalau seri, dibiarkan kosong.
+      const same = woList.filter((w) => w.operatorId && w.operatorId === operatorId)
+      if (same.length === 1) setWoId(same[0].id)
+    }
+  }, [woList, woId, wos.isFetching, pickedHere, operatorId])
+
+  // Pilihan dari drawer: ikut mengisi unit dan operator WO supaya lolos pengecekan server.
+  const onPick = (w: WorkOrderRow) => {
+    setPicked(w)
+    setWoId(w.id)
+    if (w.unitId && d.units.some((u) => u.unitId === w.unitId)) setUnitId(w.unitId)
+    if (w.operatorId && d.operators.some((o) => o.employeeId === w.operatorId)) setOperatorId(w.operatorId)
+    setWoSearchOpen(false)
+  }
 
   const unitType = d.units.find((u) => u.unitId === unitId)?.unitType ?? ''
   const totalTime = hoursBetween(start, finish)
   const totalJourney = hoursBetween(dispatch, arrive, 2)
   const crewById = useMemo(() => new Map(d.crew.map((c) => [c.employeeId, c])), [d.crew])
-  const linked = woList.find((w) => w.id === woId)
+  const linked =
+    woList.find((w) => w.id === woId) ??
+    (pickedHere && picked ? { id: picked.id, start: picked.startDate ?? '', finish: picked.finishDate ?? picked.startDate ?? '', hasTimesheetThatDay: false } : undefined)
+  const outsidePeriod = !!linked && !!date && (date < linked.start.slice(0, 10) || date > linked.finish.slice(0, 10))
+
+  // Detail WO terpilih: dari hasil pencarian, atau dari daftar WO untuk unit dan tanggal form.
+  const fromList = woList.find((w) => w.id === woId)
+  const woInfo = !woId
+    ? null
+    : pickedHere && picked
+      ? { unitId: picked.unitId ?? '', unitType: picked.unitType ?? '', operator: picked.operatorName ?? '', location: picked.location ?? '', start: picked.startDate ?? '', finish: picked.finishDate ?? picked.startDate ?? '' }
+      : fromList
+        ? {
+            unitId,
+            unitType,
+            operator: d.operators.find((o) => o.employeeId === fromList.operatorId)?.name ?? '',
+            location: fromList.location ?? '',
+            start: fromList.start,
+            finish: fromList.finish,
+          }
+        : null
 
   const done = () => {
     qc.invalidateQueries({ queryKey: ['approvals'] })
@@ -161,7 +200,9 @@ function Review({ id, d }: { id: string; d: ApprovalDetail }) {
   const operatorOptions = d.operators.map((o) => ({ value: o.employeeId, label: properCase(o.name) }))
   const unitOptions = d.units.map((u) => ({ value: u.unitId, label: u.unitId, hint: u.unitType ?? '' }))
   const statusOptions = d.statuses.map((s) => ({ value: s, label: s }))
-  const woOptions = woList.map((w) => ({ value: w.id, label: w.id, hint: `${formatDate(w.start)} - ${formatDate(w.finish)}${w.hasTimesheetThatDay ? ' (sudah ada timesheet hari itu)' : ''}` }))
+  const woOptions = woList.map((w) => ({ value: w.id, label: w.id, hint: `${formatDate(w.start)} - ${formatDate(w.finish)}${w.hasTimesheetThatDay ? ' (sudah ada timesheet hari itu)' : ''}${woList.length > 1 && w.operatorId && w.operatorId === operatorId ? ' (operator sama)' : ''}` }))
+  if (pickedHere && picked && !woOptions.some((o) => o.value === picked.id))
+    woOptions.unshift({ value: picked.id, label: picked.id, hint: `${formatDate(picked.startDate)} - ${formatDate(picked.finishDate)} (dari pencarian)` })
   const crewOptions = (slot: number) => d.crew.filter((c) => c.employeeId === crew[slot] || !crew.includes(c.employeeId)).map((c) => ({ value: c.employeeId, label: properCase(c.name) }))
   const setSlot = (slot: number, v: string) => setCrew(crew.map((c, i) => (i === slot ? v : c)))
   const imageUrl = `/api/timesheet-approvals/${encodeURIComponent(id)}/image`
@@ -206,11 +247,40 @@ function Review({ id, d }: { id: string; d: ApprovalDetail }) {
               <div className="col-span-full rounded-xl border border-blue-100 bg-blue-50/50 p-4">
                 <div className="text-xs font-semibold uppercase tracking-wide text-blue-600">Work Order</div>
                 <div className="mt-2">
-                  <Dropdown className="[&>button]:min-w-0" value={woId} onChange={setWoId} options={woOptions} label="Work order" placeholder="Pilih work order" />
+                  <div className="flex items-center gap-2">
+                    <Dropdown className="min-w-0 flex-1 [&>button]:min-w-0" value={woId} onChange={setWoId} options={woOptions} label="Work order" placeholder="Pilih work order" />
+                    <button type="button" onClick={() => setWoSearchOpen(true)} className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-700 hover:bg-slate-50">Cari</button>
+                  </div>
                 </div>
-                <p className={`mt-2 text-sm ${linked ? 'text-slate-700' : 'text-slate-400'}`}>
-                  {linked ? `Periode ${formatDate(linked.start)} sampai ${formatDate(linked.finish)}` : woList.length ? 'Belum dipilih' : 'Tidak ada work order untuk unit dan tanggal ini'}
-                </p>
+                {woInfo ? (
+                  <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+                    <div className="min-w-0">
+                      <dt className="text-xs font-semibold text-slate-500">Unit ID</dt>
+                      <dd className="text-slate-900">{woInfo.unitId || '-'}</dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-xs font-semibold text-slate-500">Unit Type</dt>
+                      <dd className="text-slate-900">{woInfo.unitType || '-'}</dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-xs font-semibold text-slate-500">Operator</dt>
+                      <dd className="text-slate-900">{woInfo.operator ? properCase(woInfo.operator) : '-'}</dd>
+                    </div>
+                    <div className="min-w-0 sm:col-span-3">
+                      <dt className="text-xs font-semibold text-slate-500">Location</dt>
+                      <dd className="text-slate-900">{woInfo.location ? properCase(woInfo.location) : '-'}</dd>
+                    </div>
+                    <div className="min-w-0 sm:col-span-3">
+                      <dt className="text-xs font-semibold text-slate-500">Start Date - Finish Date</dt>
+                      <dd className={outsidePeriod ? 'text-amber-700' : 'text-slate-900'}>
+                        {formatDate(woInfo.start)} - {formatDate(woInfo.finish)}
+                        {outsidePeriod && ' · tanggal timesheet di luar periode work order, Approve akan ditolak'}
+                      </dd>
+                    </div>
+                  </dl>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-400">{woList.length ? 'Belum dipilih' : 'Tidak ada work order untuk unit dan tanggal ini'}</p>
+                )}
               </div>
 
               <Section title="Timesheet Detail" />
@@ -309,6 +379,7 @@ function Review({ id, d }: { id: string; d: ApprovalDetail }) {
           </div>
         </div>
       </div>
+      <WorkOrderSearchDrawer open={woSearchOpen} onClose={() => setWoSearchOpen(false)} unitOptions={unitOptions} operatorOptions={operatorOptions} initial={{ unitId, operatorId, date }} onSelect={onPick} selectedId={woId} />
     </main>
   )
 }
