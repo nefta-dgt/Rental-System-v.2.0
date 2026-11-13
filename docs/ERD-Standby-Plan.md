@@ -1,7 +1,60 @@
 # Rencana perubahan ERD Standby
 
-Status: **rencana saja**. Belum ada tabel, migrasi, atau kode yang diubah, dan live tidak disentuh.
+Status: rencana asli (2026-11-10) **sudah sebagian direalisasikan di staging dan kode v2**; lihat "Status realisasi" di bawah (dicek 2026-11-13). Bagian 1 sampai 8 adalah rencana asli dan tidak diubah. **Live belum disentuh** untuk skema ini.
 Semua angka diambil read-only dari DB **live** pada 2026-11-10 (`begin read only`). Staging lokal tertinggal (913 baris standby, live 1175), jadi staging harus disegarkan dulu sebelum menguji migrasi apa pun.
+
+## Status realisasi (dicek 2026-11-13)
+Sumber pengecekan: kode `main` (PR #14, `705e3ff`), file migrasi, dan staging `company_staging` (read-only). Live tidak diperiksa ulang pada tanggal ini; status live mengikuti open list di `Rental-System-v2-Planning.md`.
+
+### Keputusan (bagian 4)
+| # | Rencana | Status | Catatan |
+|---|---|---|---|
+| 1 | Standby berfee lewat timesheet, tanpa tabel fee baru | **Terealisasi** | Tidak ada tabel fee baru; `fee_payout_valuation`, `operator_and_crew_assignment`, `timesheet_valuation` tidak berubah |
+| 2 | Kolom `timesheet.standby_id` | **Terealisasi di staging**, belum live | `2026-11-10_timesheet_standby_id.sql`: integer boleh kosong, FK `ON DELETE RESTRICT`, `UNIQUE` |
+| 3 | `CHECK` tepat-satu `work_order_id` atau `standby_id` | **Terealisasi di staging**, belum live | `2026-11-10_timesheet_one_parent_check.sql`: `NOT VALID` lalu `VALIDATE`; di staging sudah tervalidasi |
+| 4 | Bersihkan timesheet tanpa WO | **Terealisasi** (oleh user, di live) | Staging: 0 timesheet tanpa WO dari 1384 |
+| 5 | Daftar standby per rentang dihitung saat dibaca | **Terealisasi** | `GET /api/standby/ranges` (PR #10) |
+| 6 | v2 dicoba di staging dulu, v1 tidak diubah | **Terealisasi** | Staging disegarkan (1175 baris standby, sama dengan live); v1 tidak diubah |
+| 7 | Penegakan aturan di langkah approve | **Terealisasi di v2** | Status `Standby` wajib `standbyId` dan tanpa WO; status lain wajib WO; pesan error jelas |
+
+### Langkah (bagian 6)
+| Langkah | Status | Catatan |
+|---|---|---|
+| 1 Segarkan staging | Selesai | |
+| 2 Cek trigger `trg_log_timesheet` | Selesai | Memakai `to_jsonb(NEW/OLD)`, kolom baru aman |
+| 3 Putuskan hal terbuka | **Sebagian** | Lihat tabel pertanyaan di bawah |
+| 5 Migrasi `standby_id` | Selesai di staging | |
+| 6 Tanpa backfill link lama | Sesuai rencana | Link lama `standby_log.timesheet_id` (58) dibiarkan |
+| 7 Uji `CHECK NOT VALID` / `VALIDATE` | Selesai di staging | |
+| 8 Endpoint v2 timesheet standby | **Selesai** | `POST /api/standby/:id/timesheet` (izin `timesheet:create`, audit log, `Aturan-Endpoint.md`), ditambah jalur approve standby dan `GET /api/timesheet-approvals/standby`. Web: halaman Review punya kotak Standby dan daftar standby per tanggal. **Belum ada halaman web untuk membuat timesheet standby langsung dari daftar Standby** |
+| 9 Alur fee tidak berubah | Sesuai rencana | |
+| 10 Backup live | **Belum** | |
+| 11 Hapus timesheet tanpa WO di live | Selesai | Oleh user |
+| 12 Migrasi `standby_id` di live | **Belum** | |
+| 13 `CHECK` tepat-satu di live | **Belum** | Tetap paling akhir |
+| 14 Catat di open list | Selesai | `Rental-System-v2-Planning.md`, migrasi live butir 7 sampai 12 |
+
+### Pertanyaan terbuka (bagian 7)
+| # | Pertanyaan | Status |
+|---|---|---|
+| 1 | Satu unit-hari boleh Work dan Standby sekaligus? | **Belum diputuskan resmi.** Di kode: boleh. `POST /api/standby/:id/timesheet` hanya memberi peringatan, dan approve standby tidak memeriksa timesheet lain di unit dan tanggal yang sama |
+| 2 | Pilihan standby di approve diambil dari mana? | **Terjawab di kode:** dari `standby_log` untuk unit dan tanggal yang sama (satu baris per unit per hari); kalau unit tidak terbaca dari OCR, form menampilkan daftar standby pada tanggal itu |
+| 3 | Kapan approve pindah dari v1 ke v2? | **Belum.** Jalur approve v2 sudah siap di staging, belum di live |
+| 4 | Fee: satu total per timesheet atau per orang? | **Belum**, tidak disentuh |
+| 5 | WO bertipe `Standby` (99) dan 244 hari standby beririsan WO | **Belum.** Pembuatan WO v2 hanya memberi peringatan bentrok, tidak memblokir |
+| 6 | Izin `standby:edit` dan `standby:delete` | **Belum.** Di staging hanya ada `standby:view` dan `standby:create`, dan tidak ada endpoint ubah atau hapus standby v2 |
+| 7 | 16 file gambar timesheet yang dihapus | **Belum** |
+
+### Hal baru di luar rencana asli
+- **Kolom `ts_type`** (enum `work`, `failed`, `standby`): `2026-11-13_timesheet_ts_type.sql` dan `2026-11-13_timesheet_ts_type_required.sql`. Baris lama diisi `work` (1384), kolom NOT NULL, dan constraint `timesheet_ts_type_standby_check` (`ts_type = 'standby'` kalau dan hanya kalau `standby_id` terisi). Baru di staging.
+- **Dampak ke data lama:** 180 timesheet berstatus `Standby` yang berinduk WO kini ber-`ts_type = 'work'`, jadi "status Standby" di data lama tidak sama dengan `ts_type standby`. Pemetaan status `Failed` dan `Failed-maintenance` ke `ts_type` belum diputuskan (approve v2 sementara menyimpan `work`).
+- **Perubahan perilaku approve:** status `Standby` tidak lagi boleh memakai work order.
+- **Penambahan urutan deploy (bagian 6):** `ts_type_required` memakai NOT NULL tanpa nilai bawaan, sehingga insert v1/bot/n8n yang tidak menyebut `ts_type` akan ditolak. Jalankan **paling akhir bersama langkah 13**. Backfill-nya juga menulis satu catatan UPDATE ke `ts_log` per baris timesheet.
+- **`standby_log.timesheet_id`** (kolom v1) tidak diisi oleh jalur v2; hanya `timesheet.standby_id` yang diisi.
+
+### Ringkasan
+- **Sudah:** skema dan constraint di staging, endpoint dan jalur approve standby di v2, pembersihan timesheet tanpa WO di live.
+- **Belum:** seluruh langkah di live (backup, kolom, `CHECK`, `ts_type`), penyesuaian v1, halaman web untuk membuat timesheet standby dari daftar Standby, izin ubah dan hapus standby, serta keputusan soal fee, irisan WO dan standby, dan gambar.
 
 ## 1. Latar belakang (keterangan user)
 - `standby_log` mencatat **unit mana yang standby** pada hari tertentu (jadwal).
