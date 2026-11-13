@@ -613,8 +613,8 @@ recordsRouter.post(
         : [];
 
       await tx.execute(
-        sql`insert into rental.timesheet (ts_id, time, volume, unit_id, unit_type, date, operator, status, standby_id, remarks, "user")
-            values (${b.tsId}, ${b.time}, ${b.volume}, ${standby.unit_id}, ${standby.unit_type}, ${standby.date}::date, ${op.rows[0].full_name}, 'Standby', ${standbyId}, ${b.remarks}, ${name})`,
+        sql`insert into rental.timesheet (ts_id, time, volume, unit_id, unit_type, date, operator, status, ts_type, standby_id, remarks, "user")
+            values (${b.tsId}, ${b.time}, ${b.volume}, ${standby.unit_id}, ${standby.unit_type}, ${standby.date}::date, ${op.rows[0].full_name}, 'Standby', 'standby', ${standbyId}, ${b.remarks}, ${name})`,
       );
       await tx.execute(sql`insert into rental.operator_and_crew_assignment (ts_id, employee_id, role) values (${b.tsId}, ${b.operatorId}::uuid, 'OPERATOR')`);
       for (const crewId of b.crewIds)

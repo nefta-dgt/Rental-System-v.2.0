@@ -122,6 +122,21 @@ function Review({ id, d }: { id: string; d: ApprovalDetail }) {
     }
   }, [woList, woId, wos.isFetching, pickedHere, operatorId])
 
+  // Status Standby: timesheet menunjuk hari standby (unit + tanggal), bukan work order.
+  const isStandby = status === 'Standby'
+  const sbq = useQuery({
+    queryKey: ['approval-standby', unitId, date],
+    queryFn: () => api.listApprovalStandby(unitId, date),
+    enabled: isStandby && !!unitId && /^\d{4}-\d{2}-\d{2}$/.test(date),
+    initialData: unitId === (d.resolved.unitId ?? '') && date === p.date ? { items: d.standby ? [d.standby] : [] } : undefined,
+  })
+  const standby = sbq.data?.items[0] ?? null
+  const standbyTaken = !!standby?.timesheetId
+  // Semua standby pada tanggal form, untuk memilih unit kalau unit hasil OCR tidak terbaca.
+  const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date)
+  const sbDay = useQuery({ queryKey: ['approval-standby-day', date], queryFn: () => api.listApprovalStandbyOnDate(date), enabled: isStandby && validDate })
+  const standbyToday = sbDay.data?.items ?? []
+
   // Pilihan dari drawer: ikut mengisi unit dan operator WO supaya lolos pengecekan server.
   const onPick = (w: WorkOrderRow) => {
     setPicked(w)
@@ -164,7 +179,7 @@ function Review({ id, d }: { id: string; d: ApprovalDetail }) {
   const approve = useMutation({
     mutationFn: () =>
       api.approveTimesheet(id, {
-        woId, tsNo: tsNo.trim(), operatorId, unitId, date, status, volume: Number(volume), pipe: pipe.trim(), dispatch, arrive, start, finish, returnTime,
+        woId: isStandby ? '' : woId, ...(isStandby && standby ? { standbyId: standby.id } : {}), tsNo: tsNo.trim(), operatorId, unitId, date, status, volume: Number(volume), pipe: pipe.trim(), dispatch, arrive, start, finish, returnTime,
         distanceKm: distance.trim() === '' ? null : Number(distance.replace(',', '.')), customer: customer.trim(), location: location.trim(),
         batchingPlant: batchingPlant.trim(), notes: notes.trim(), crewIds: crew.filter(Boolean),
       }),
@@ -191,6 +206,7 @@ function Review({ id, d }: { id: string; d: ApprovalDetail }) {
       : minutesOf(start) === null || minutesOf(finish) === null ? 'Start dan Finish wajib diisi (HH:MM).'
       : [dispatch, arrive, returnTime].some((t) => t !== '' && minutesOf(t) === null) ? 'Format jam harus HH:MM.'
       : distance.trim() !== '' && Number.isNaN(Number(distance.replace(',', '.'))) ? 'Jarak harus berupa angka.'
+      : isStandby ? (!standby ? 'Tidak ada hari standby untuk unit dan tanggal ini.' : standbyTaken ? `Hari standby ini sudah punya timesheet ${standby.timesheetId}.` : null)
       : !woId ? 'Pilih work order.'
       : null
     setError(bad)
@@ -244,6 +260,70 @@ function Review({ id, d }: { id: string; d: ApprovalDetail }) {
             {(error || approve.error || decline.error) && <Result kind="error">{error ?? (approve.error ?? decline.error)!.message}</Result>}
 
             <div className="grid grid-cols-2 gap-5 min-[1280px]:grid-cols-4">
+              {isStandby ? (
+                <div className="col-span-full rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Standby</div>
+                  {standby ? (
+                    <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+                      <div className="min-w-0">
+                        <dt className="text-xs font-semibold text-slate-500">Unit ID</dt>
+                        <dd className="text-slate-900">{standby.unitId} · {unitType || '-'}</dd>
+                      </div>
+                      <div className="min-w-0">
+                        <dt className="text-xs font-semibold text-slate-500">Tanggal standby</dt>
+                        <dd className="text-slate-900">{formatDate(standby.date)}</dd>
+                      </div>
+                      <div className="min-w-0">
+                        <dt className="text-xs font-semibold text-slate-500">Timesheet</dt>
+                        <dd className={standbyTaken ? 'text-red-600' : 'text-slate-900'}>
+                          {standbyTaken ? `sudah ada: ${standby.timesheetId}, Approve akan ditolak` : 'belum ada, siap di-approve'}
+                        </dd>
+                      </div>
+                    </dl>
+                  ) : (
+                    <p className={`mt-2 text-sm ${!unitId || !validDate || sbq.isFetching ? 'text-amber-700' : 'text-red-600'}`}>
+                      {!unitId
+                        ? 'Pilih Unit ID dulu (unit dari OCR belum terbaca), atau pilih dari daftar di bawah.'
+                        : !validDate
+                          ? 'Isi tanggal dulu.'
+                          : sbq.isFetching
+                            ? 'Memuat...'
+                            : 'Tidak ada hari standby untuk unit dan tanggal ini, Approve akan ditolak.'}
+                    </p>
+                  )}
+                  {validDate && (
+                    <div className="mt-3">
+                      <div className="text-xs font-semibold text-slate-500">
+                        Standby pada {formatDate(date)} {sbDay.isFetching ? '(memuat...)' : `(${standbyToday.length})`}
+                      </div>
+                      {standbyToday.length ? (
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {standbyToday.map((s) => {
+                            const known = d.units.some((u) => u.unitId === s.unitId)
+                            const chosen = s.unitId === unitId
+                            return (
+                              <button
+                                key={s.id}
+                                type="button"
+                                disabled={!!s.timesheetId || !known}
+                                onClick={() => setUnitId(s.unitId)}
+                                title={s.timesheetId ? `Sudah punya timesheet ${s.timesheetId}` : s.unitType ?? ''}
+                                className={`rounded-lg border px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50 ${chosen ? 'border-amber-500 bg-amber-100 text-amber-900' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'}`}
+                              >
+                                {s.unitId}
+                                {s.timesheetId ? ' · sudah ada' : ''}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      ) : (
+                        !sbDay.isFetching && <p className="mt-1 text-sm text-slate-400">Belum ada standby tercatat di tanggal ini.</p>
+                      )}
+                    </div>
+                  )}
+                  <p className="mt-2 text-xs text-slate-500">Timesheet standby menunjuk hari standby dan tidak memakai work order.</p>
+                </div>
+              ) : (
               <div className="col-span-full rounded-xl border border-blue-100 bg-blue-50/50 p-4">
                 <div className="text-xs font-semibold uppercase tracking-wide text-blue-600">Work Order</div>
                 <div className="mt-2">
@@ -282,6 +362,7 @@ function Review({ id, d }: { id: string; d: ApprovalDetail }) {
                   <p className="mt-2 text-sm text-slate-400">{woList.length ? 'Belum dipilih' : 'Tidak ada work order untuk unit dan tanggal ini'}</p>
                 )}
               </div>
+              )}
 
               <Section title="Timesheet Detail" />
               <Cell label="TS No">

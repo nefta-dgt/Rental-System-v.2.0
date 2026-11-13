@@ -76,12 +76,14 @@ export type ApprovalRow = {
 export type ApprovalList = { items: ApprovalRow[]; total: number; page: number; pageSize: number }
 export type Person = { employeeId: string; name: string }
 export type ApprovalWorkOrder = { id: string; location: string | null; rcType: string | null; operatorId: string | null; start: string; finish: string; hasTimesheetThatDay: boolean }
+export type ApprovalStandby = { id: number; unitId: string; unitType?: string | null; date: string; timesheetId: string | null }
 export type ApprovalDetail = {
   id: string; status: string; createdAt: string | null; confidence: number | null; doubtfulFields: string | null; hasImage: boolean
   fields: Record<'tsNo' | 'date' | 'unitId' | 'unitType' | 'customer' | 'company' | 'location' | 'dispatch' | 'arrive' | 'start' | 'finish' | 'returnTime' | 'totalHours' | 'volume' | 'pipe' | 'operator' | 'notes' | 'phone' | 'pic' | 'batchingPlant', string | null> & { crew: string[] }
   resolved: { unitId: string | null; date: string | null }
   prefill: { date: string; dispatch: string; arrive: string; start: string; finish: string; returnTime: string; volume: string }
   workOrders: ApprovalWorkOrder[]
+  standby: ApprovalStandby | null
   operators: Person[]
   crew: (Person & { nik: string | null })[]
   units: { unitId: string; unitType: string | null }[]
@@ -90,7 +92,8 @@ export type ApprovalDetail = {
 }
 export type ApprovalFilter = { q?: string; page?: number; pageSize?: number }
 export type ApproveInput = {
-  woId: string; tsNo: string; operatorId: string; unitId: string; date: string; status: string; volume: number; pipe: string
+  // Status Standby: kirim standbyId dan woId kosong. Status lain: kirim woId, tanpa standbyId.
+  woId: string; standbyId?: number; tsNo: string; operatorId: string; unitId: string; date: string; status: string; volume: number; pipe: string
   dispatch: string; arrive: string; start: string; finish: string; returnTime: string; distanceKm: number | null
   customer: string; location: string; batchingPlant: string; notes: string; crewIds: string[]
 }
@@ -154,9 +157,13 @@ export const api = {
   },
   listApprovalWorkOrders: (unitId: string, date: string) =>
     request<{ items: ApprovalWorkOrder[] }>(`/api/timesheet-approvals/work-orders?unitId=${encodeURIComponent(unitId)}&date=${encodeURIComponent(date)}`),
+  listApprovalStandby: (unitId: string, date: string) =>
+    request<{ items: ApprovalStandby[] }>(`/api/timesheet-approvals/standby?unitId=${encodeURIComponent(unitId)}&date=${encodeURIComponent(date)}`),
+  listApprovalStandbyOnDate: (date: string) =>
+    request<{ items: ApprovalStandby[] }>(`/api/timesheet-approvals/standby?date=${encodeURIComponent(date)}`),
   getApproval: (id: string) => request<ApprovalDetail>(`/api/timesheet-approvals/${encodeURIComponent(id)}`),
   approveTimesheet: (id: string, b: ApproveInput) =>
-    request<{ id: string; status: string; tsId: string; workOrderId: string; unitId: string; date: string }>(`/api/timesheet-approvals/${encodeURIComponent(id)}/approve`, { method: 'POST', body: JSON.stringify(b) }),
+    request<{ id: string; status: string; tsId: string; workOrderId: string | null; standbyId: number | null; tsType: string; unitId: string; date: string }>(`/api/timesheet-approvals/${encodeURIComponent(id)}/approve`, { method: 'POST', body: JSON.stringify(b) }),
   declineTimesheet: (id: string) => request<{ id: string; status: string }>(`/api/timesheet-approvals/${encodeURIComponent(id)}/decline`, { method: 'POST', body: '{}' }),
   schedule: (from: string, to: string) =>
     request<Schedule>(`/api/schedule?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
