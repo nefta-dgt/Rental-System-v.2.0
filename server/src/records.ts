@@ -552,3 +552,81 @@ recordsRouter.get(
   }),
 );
 
+// ---------- Timesheet standby: timesheet yang menunjuk satu hari standby (timesheet.standby_id), tanpa work order ----------
+// Aturan "tepat satu": timesheet menunjuk work_order_id ATAU standby_id (dipaksa constraint timesheet_one_parent_check bila terpasang).
+// Penulis timesheet di v1 hanya endpoint approve; ini jalur v2 untuk timesheet berstatus Standby.
+const standbyTimesheetBody = z.object({
+  tsId: text(100).min(1, "Nomor timesheet wajib diisi"),
+  operatorId: z.string().uuid("Operator wajib dipilih"),
+  crewIds: z.array(z.string().uuid("Crew tidak valid")).max(5, "Crew maksimal 5 orang").default([]),
+  time: z.coerce.number().min(0).max(9999).default(0),
+  volume: z.coerce.number().min(0).max(99999999).default(0),
+  remarks: optionalText(2000),
+});
+
+recordsRouter.post(
+  "/standby/:id/timesheet",
+  requirePermission("timesheet:create"),
+  handle(async (req, res) => {
+    const standbyId = Number(req.params.id);
+    if (!Number.isInteger(standbyId) || standbyId < 1) throw new HttpError(400, "ID standby tidak valid");
+    const b = standbyTimesheetBody.parse(req.body);
+    if (new Set(b.crewIds).size !== b.crewIds.length || b.crewIds.includes(b.operatorId))
+      throw new HttpError(400, "Operator dan crew tidak boleh dipilih dua kali");
+    const userId = req.session.userId!;
+    const name = await actor(userId);
+
+    const result = await db.transaction(async (tx) => {
+      // Trigger log timesheet (fn_log_timesheet_changes) menulis ke ts_log tanpa awalan skema, jadi rental harus ada di search_path.
+      await tx.execute(sql`set local search_path to rental, public`);
+
+      const sb = await tx.execute<{ id: number; unit_id: string; date: string; unit_type: string | null }>(
+        sql`select s.id, s.unit_id, s.date::text as date, u.unit_type
+            from rental.standby_log s left join rental.unit u on u.unit_id = s.unit_id
+            where s.id = ${standbyId} for update of s`,
+      );
+      const standby = sb.rows[0];
+      if (!standby) throw new HttpError(404, "Hari standby tidak ditemukan");
+
+      const taken = await tx.execute<{ ts_id: string }>(sql`select ts_id from rental.timesheet where standby_id = ${standbyId}`);
+      if (taken.rows.length) throw new HttpError(409, `Hari standby ini sudah punya timesheet ${taken.rows[0].ts_id}`);
+      const dupId = await tx.execute(sql`select 1 from rental.timesheet where ts_id = ${b.tsId}`);
+      if (dupId.rows.length) throw new HttpError(409, `Nomor timesheet ${b.tsId} sudah dipakai`);
+
+      const op = await tx.execute<{ full_name: string }>(
+        sql`select full_name from hr.employee where employee_id = ${b.operatorId}::uuid and lower(role) = 'operator' and is_active`,
+      );
+      if (!op.rows[0]) throw new HttpError(400, "Operator tidak ditemukan, nonaktif, atau bukan operator");
+      if (b.crewIds.length) {
+        const crew = await tx.execute<{ employee_id: string }>(
+          sql`select employee_id from hr.employee where employee_id in (${sql.join(b.crewIds.map((i) => sql`${i}::uuid`), sql`, `)}) and lower(role) = 'crew' and is_active`,
+        );
+        if (crew.rows.length !== b.crewIds.length) throw new HttpError(400, "Ada crew yang tidak ditemukan, nonaktif, atau bukan crew");
+      }
+
+      // Tidak memblokir (keputusan: boleh ada timesheet lain di unit dan tanggal yang sama), hanya peringatan.
+      const others = await tx.execute<{ ts_id: string; status: string }>(
+        sql`select ts_id, status from rental.timesheet where unit_id = ${standby.unit_id} and date = ${standby.date}::date`,
+      );
+      const warnings = others.rows.length
+        ? [`Unit ${standby.unit_id} sudah punya timesheet lain pada ${standby.date}: ${others.rows.map((r) => `${r.ts_id} (${r.status})`).join(", ")}.`]
+        : [];
+
+      await tx.execute(
+        sql`insert into rental.timesheet (ts_id, time, volume, unit_id, unit_type, date, operator, status, ts_type, standby_id, remarks, "user")
+            values (${b.tsId}, ${b.time}, ${b.volume}, ${standby.unit_id}, ${standby.unit_type}, ${standby.date}::date, ${op.rows[0].full_name}, 'Standby', 'standby', ${standbyId}, ${b.remarks}, ${name})`,
+      );
+      await tx.execute(sql`insert into rental.operator_and_crew_assignment (ts_id, employee_id, role) values (${b.tsId}, ${b.operatorId}::uuid, 'OPERATOR')`);
+      for (const crewId of b.crewIds)
+        await tx.execute(sql`insert into rental.operator_and_crew_assignment (ts_id, employee_id, role) values (${b.tsId}, ${crewId}::uuid, 'CREW')`);
+
+      await audit(tx, userId, "timesheet:create", "timesheet", b.tsId, {
+        ts_id: b.tsId, status: "Standby", standby_id: standbyId, unit_id: standby.unit_id, date: standby.date,
+        operator_id: b.operatorId, crew_ids: b.crewIds, time: b.time, volume: b.volume,
+      });
+      return { tsId: b.tsId, standbyId, unitId: standby.unit_id, date: standby.date, status: "Standby", operatorName: op.rows[0].full_name, crewCount: b.crewIds.length, warnings };
+    });
+    res.status(201).json(result);
+  }),
+);
+

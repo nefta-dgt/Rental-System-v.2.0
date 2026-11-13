@@ -7,9 +7,9 @@ Catatan ini mencatat aturan setiap endpoint server v2. **Wajib diperbarui setiap
 - Autentikasi: sesi cookie (`connect.sid`, httpOnly, 8 jam), disimpan di memori server.
 - Izin dicek lewat `requirePermission(key)` ([server/src/access.ts](../server/src/access.ts)). Belum login → `401`, tidak punya izin → `403`.
 - Semua perubahan data dicatat di `access.audit_log`.
-- Kolom `created_by` pada `rental.work_order`, `rental.maintenance`, dan `rental.standby_log` baru ada di staging, jadi endpoint buat dan daftar untuk ketiganya belum bisa jalan di live (lihat Planning).
+- Kolom `created_by` pada `rental.work_order`, `rental.maintenance`, `rental.standby_log`, serta `rental.timesheet.standby_id`, baru ada di staging, jadi endpoint buat dan daftar untuk ketiganya belum bisa jalan di live (lihat Planning).
 
-Terakhir diperbarui: 2026-11-11 (Timesheet Approval: `/api/timesheet-approvals`).
+Terakhir diperbarui: 2026-11-13 (approve timesheet standby: `standbyId`, GET `/api/timesheet-approvals/standby` (dengan atau tanpa `unitId`), kolom `ts_type` pada insert timesheet; sebelumnya 2026-11-11: Timesheet Approval `/api/timesheet-approvals`; timesheet standby POST `/api/standby/:id/timesheet`, tanpa work order).
 
 ---
 
@@ -181,6 +181,11 @@ Sumber data: `rental.buffer_timesheet` (hasil OCR dari WhatsApp/n8n, ditulis v1)
 - Izin: `timesheet:view`.
 - Query: `unitId`, `date` (`YYYY-MM-DD`). Mengembalikan `{ items[] }`: work order unit itu yang periodenya mencakup tanggal, `{ id, location, rcType, operatorId, start, finish, hasTimesheetThatDay }`. Parameter tidak valid → `items` kosong. Dipakai form saat unit atau tanggal diubah.
 
+### GET `/api/timesheet-approvals/standby`
+- Izin: `timesheet:view`. Query: `date` (`YYYY-MM-DD`, wajib) dan `unitId` (opsional); kalau tidak valid, `{ items: [] }`.
+- Hari standby (`rental.standby_log`), dipakai form Review kalau Status = Standby. Dengan `unitId`: hari standby unit itu pada tanggal itu (satu baris per unit per hari). **Tanpa `unitId`**: semua standby pada tanggal itu, diurutkan menurut unit, supaya form bisa menawarkan pilihan unit saat unit hasil OCR tidak terbaca.
+- Sukses `200`: `{ items: [{ id, unitId, unitType?, date, timesheetId }] }` (`unitType` hanya pada daftar tanpa `unitId`); `timesheetId` terisi kalau hari standby itu sudah punya timesheet (lewat `timesheet.standby_id`). `GET /:id` juga membawa `standby` (satu objek yang sama atau `null`) untuk unit dan tanggal hasil OCR.
+
 ### GET `/api/timesheet-approvals/:id/image`
 - Izin: `timesheet:view`.
 - Mengirim file gambar OCR dari folder `UPLOADS_DIR` (env server). Hanya nama file dari `image_filename` yang dipakai, jadi tidak bisa keluar dari folder itu.
@@ -192,7 +197,8 @@ Sumber data: `rental.buffer_timesheet` (hasil OCR dari WhatsApp/n8n, ditulis v1)
 
 | Field | Aturan |
 |---|---|
-| `woId` | wajib; work order harus ada, untuk unit yang sama, periodenya mencakup `date`, dan operatornya (kalau terisi) sama dengan `operatorId` |
+| `woId` | wajib **kecuali `status` = `Standby`** (lalu harus kosong); work order harus ada, untuk unit yang sama, periodenya mencakup `date`, dan operatornya (kalau terisi) sama dengan `operatorId` |
+| `standbyId` | wajib kalau `status` = `Standby` (angka, `rental.standby_log.id`), dilarang untuk status lain; hari standby harus ada, untuk unit yang sama, `date` sama dengan tanggal hari standby, dan belum punya timesheet |
 | `tsNo` | wajib, maks 100; belum boleh ada di `rental.timesheet` |
 | `operatorId` | wajib, UUID karyawan aktif ber-role operator (nama lengkapnya disimpan di kolom `operator`) |
 | `unitId` | wajib; harus ada di `rental.unit` |
@@ -213,6 +219,9 @@ Sumber data: `rental.buffer_timesheet` (hasil OCR dari WhatsApp/n8n, ditulis v1)
 - Sukses `200`: `{ id, status: "APPROVED", tsId, workOrderId, unitId, date }`.
 - Error: `400` (validasi, unit/WO/operator/crew tidak valid, WO beda unit, tanggal di luar periode WO, operator beda dengan operator WO), `404`, `409` (sudah di-approve/decline, nomor TS sudah ada, atau WO itu sudah punya timesheet di tanggal tsb).
 - Timesheet tanpa work order tidak bisa dibuat lewat jalur ini (v1 bisa); ini sejalan dengan aturan "tepat satu" work order atau standby.
+- **Jalur work order** (`status` Work, Failed, Failed-maintenance): menyimpan `ts_type = 'work'` (pemetaan Failed ke `failed` belum diputuskan), `work_order_id` terisi, `standby_id` kosong.
+- **Jalur standby** (`status` = `Standby`): menyimpan `ts_type = 'standby'`, `standby_id` terisi, `work_order_id` kosong, dan kolom `wo_id` di `buffer_timesheet` tetap kosong. Pengecekan work order dan operator-WO tidak berlaku; operator dan crew tetap diperiksa. Perubahan perilaku: status `Standby` dulu masih boleh memakai WO, sekarang wajib lewat hari standby. Kolom `standby_log.timesheet_id` (dari v1) tidak diisi, sama dengan `POST /api/standby/:id/timesheet`.
+- Respons sukses menambah `standbyId` dan `tsType`; `workOrderId` bisa `null`. Error tambahan: `400` (standbyId wajib/dilarang menurut status, hari standby tidak ada, beda unit, beda tanggal), `409` (hari standby sudah punya timesheet).
 
 ### POST `/api/timesheet-approvals/:id/decline`
 - Izin: `timesheet:approve`.
@@ -220,6 +229,35 @@ Sumber data: `rental.buffer_timesheet` (hasil OCR dari WhatsApp/n8n, ditulis v1)
 - Sukses `200`: `{ id, status: "REJECTED" }`. Error: `404`, `409`.
 
 ---
+
+## Timesheet standby
+
+### POST `/api/standby/:id/timesheet`
+- Izin: `timesheet:create` (migrasi `server/migrations/2026-11-10_add_timesheet_create_permission.sql`, staging saja; Superadmin otomatis lewat `*`).
+- Membuat **timesheet berstatus `Standby`** untuk satu hari standby (`:id` = `rental.standby_log.id`). Timesheet menunjuk standby lewat kolom `timesheet.standby_id` dan **tidak** memakai work order (`work_order_id` dikosongkan). Aturan "tepat satu" dari `work_order_id` atau `standby_id` dijaga constraint `timesheet_one_parent_check`.
+- Butuh migrasi `2026-11-10_timesheet_standby_id.sql` (kolom `standby_id`: boleh kosong, FK `ON DELETE RESTRICT`, `UNIQUE`). Constraint `2026-11-10_timesheet_one_parent_check.sql` dipasang paling akhir dan bukan syarat endpoint ini. Keduanya baru ada di staging.
+- Body:
+
+| Field | Aturan |
+|---|---|
+| `tsId` | wajib, maks 100 karakter; nomor timesheet harus belum dipakai |
+| `operatorId` | wajib, UUID karyawan aktif ber-role `operator` |
+| `crewIds` | opsional, maks 5 UUID karyawan aktif ber-role `crew`; tidak boleh ganda dan tidak boleh sama dengan operator |
+| `time` | opsional, 0 sampai 9999, default 0 |
+| `volume` | opsional, 0 sampai 99.999.999, default 0 |
+| `remarks` | opsional, maks 2000 karakter |
+
+- Perilaku (satu transaksi, semua-atau-tidak-sama-sekali):
+  - Unit, tanggal, dan tipe unit diambil dari baris standby (tidak dikirim dari form). Kolom `operator` diisi nama operator, kolom `user` diisi nama akun yang login (ikut tercatat sebagai `changed_by` di `ts_log`).
+  - Satu hari standby hanya boleh punya satu timesheet (`409` jika sudah ada).
+  - Satu OPERATOR dan nol sampai lima CREW dimasukkan ke `operator_and_crew_assignment`, sama seperti v1.
+  - Tidak memblokir jika unit dan tanggal itu sudah punya timesheet lain (Work/Standby); hanya muncul di `warnings`.
+  - Trigger `fn_log_timesheet_changes` menulis ke `ts_log` tanpa awalan skema, jadi transaksi memasang `set local search_path to rental, public`. Fungsi trigger di database tidak diubah.
+  - Dicatat di `access.audit_log` (`timesheet:create`).
+- Sukses `201`: `{ tsId, standbyId, unitId, date, status, operatorName, crewCount, warnings[] }`.
+- Error: `400` (validasi, operator atau crew tidak valid, ID standby bukan angka), `404` (hari standby tidak ada), `409` (standby sudah punya timesheet, atau nomor timesheet dobel), `401`, `403`.
+- Mengisi `ts_type = 'standby'` (kolom `timesheet.ts_type`, migrasi `2026-11-13_timesheet_ts_type*.sql`, staging saja). Aturan `timesheet_ts_type_standby_check`: `ts_type = 'standby'` kalau dan hanya kalau `standby_id` terisi.
+- Belum ada halaman web untuk endpoint ini.
 
 ## Yang belum ada
 - Detail, ubah, dan hapus untuk maintenance dan standby (daftar sudah ada).

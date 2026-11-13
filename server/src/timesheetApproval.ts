@@ -122,6 +122,41 @@ timesheetApprovalRouter.get(
   }),
 );
 
+// Hari standby untuk unit dan tanggal itu (satu baris per unit per hari), beserta timesheet yang sudah menunjuknya.
+// Dipakai approve timesheet berstatus Standby: timesheet menunjuk hari standby lewat standby_id dan tanpa work order.
+async function candidateStandby(unitId: string, date: string) {
+  const r = await db.execute<{ id: number; unit_id: string; date: string; ts_id: string | null }>(
+    sql`select s.id, s.unit_id, s.date::text as date, t.ts_id
+        from rental.standby_log s left join rental.timesheet t on t.standby_id = s.id
+        where s.unit_id = ${unitId} and s.date = ${date}::date`,
+  );
+  return r.rows.map((s) => ({ id: s.id, unitId: s.unit_id, date: s.date, timesheetId: s.ts_id }));
+}
+
+// Semua hari standby pada satu tanggal (semua unit). Dipakai form Review untuk memilih unit kalau unit hasil OCR tidak terbaca.
+async function standbyOnDate(date: string) {
+  const r = await db.execute<{ id: number; unit_id: string; unit_type: string | null; date: string; ts_id: string | null }>(
+    sql`select s.id, s.unit_id, u.unit_type, s.date::text as date, t.ts_id
+        from rental.standby_log s
+        left join rental.unit u on u.unit_id = s.unit_id
+        left join rental.timesheet t on t.standby_id = s.id
+        where s.date = ${date}::date
+        order by s.unit_id`,
+  );
+  return r.rows.map((s) => ({ id: s.id, unitId: s.unit_id, unitType: s.unit_type, date: s.date, timesheetId: s.ts_id }));
+}
+
+timesheetApprovalRouter.get(
+  "/standby",
+  requirePermission("timesheet:view"),
+  handle(async (req, res) => {
+    // Dengan unitId: hari standby unit itu. Tanpa unitId: semua standby pada tanggal itu.
+    const q = z.object({ unitId: z.string().trim().max(100).optional(), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).safeParse(req.query);
+    if (!q.success) return void res.json({ items: [] });
+    res.json({ items: q.data.unitId ? await candidateStandby(q.data.unitId, q.data.date) : await standbyOnDate(q.data.date) });
+  }),
+);
+
 // ---------- Detail (isi OCR + pilihan untuk approve) ----------
 async function loadBuffer(id: string) {
   const r = await db.execute<Buffer>(sql`select *, created_at::text as created_at, confidence::text as confidence from rental.buffer_timesheet where id = ${id}`);
@@ -139,10 +174,11 @@ timesheetApprovalRouter.get(
     const units = await db.execute<{ unit_id: string; unit_type: string | null }>(sql`select unit_id, unit_type from rental.unit`);
     const unit = units.rows.find((u) => norm(u.unit_id) === norm(b.no_unit)) ?? null;
 
-    const [workOrders, operators, crew] = await Promise.all([
+    const [workOrders, standby, operators, crew] = await Promise.all([
       unit && date
         ? candidateWorkOrders(unit.unit_id, date)
         : Promise.resolve([]),
+      unit && date ? candidateStandby(unit.unit_id, date) : Promise.resolve([]),
       db.execute<{ employee_id: string; full_name: string }>(sql`select employee_id, full_name from hr.employee where lower(role) = 'operator' and is_active order by full_name`),
       db.execute<{ employee_id: string; full_name: string; nik: string | null }>(sql`select employee_id, full_name, nik from hr.employee where lower(role) = 'crew' and is_active order by full_name`),
     ]);
@@ -168,6 +204,7 @@ timesheetApprovalRouter.get(
         finish: parseTime(b.selesai_operasi)?.slice(0, 5) ?? "", returnTime: parseTime(b.pulang)?.slice(0, 5) ?? "", volume: parseNumber(b.total_volume)?.toString() ?? "",
       },
       workOrders,
+      standby: standby[0] ?? null,
       operators: operators.rows.map((o) => ({ employeeId: o.employee_id, name: o.full_name })),
       crew: crew.rows.map((o) => ({ employeeId: o.employee_id, name: o.full_name, nik: o.nik })),
       units: units.rows.map((u) => ({ unitId: u.unit_id, unitType: u.unit_type })).sort((a, b) => a.unitId.localeCompare(b.unitId, "id", { numeric: true })),
@@ -200,7 +237,9 @@ timesheetApprovalRouter.get(
 // Seperti form review v1: nilai hasil OCR boleh dikoreksi sebelum disimpan. Total jam dihitung dari Start dan Finish (sama dengan v1).
 const timeField = z.string().trim().regex(/^$|^([01]\d|2[0-3]):[0-5]\d$/, "Format jam harus HH:MM").default("");
 const approveBody = z.object({
-  woId: z.string().trim().min(1, "Work order wajib dipilih").max(100),
+  // Status Standby: wajib standbyId dan tanpa woId. Status lain: wajib woId dan tanpa standbyId (dicek di handler).
+  woId: z.string().trim().max(100).default(""),
+  standbyId: z.number().int().min(1, "Hari standby tidak valid").nullish(),
   tsNo: z.string().trim().min(1, "Nomor timesheet wajib diisi").max(100),
   operatorId: z.string().uuid("Operator wajib dipilih"),
   unitId: z.string().trim().min(1, "Unit wajib dipilih").max(100),
@@ -229,6 +268,14 @@ timesheetApprovalRouter.post(
   handle(async (req, res) => {
     const id = String(req.params.id);
     const body = approveBody.parse(req.body);
+    const isStandby = body.status === "Standby";
+    if (isStandby) {
+      if (!body.standbyId) throw new HttpError(400, "Hari standby wajib dipilih");
+      if (body.woId) throw new HttpError(400, "Timesheet standby tidak memakai work order");
+    } else {
+      if (!body.woId) throw new HttpError(400, "Work order wajib dipilih");
+      if (body.standbyId) throw new HttpError(400, "Hari standby hanya untuk timesheet berstatus Standby");
+    }
     if (new Set(body.crewIds).size !== body.crewIds.length || body.crewIds.includes(body.operatorId))
       throw new HttpError(400, "Operator dan crew tidak boleh dipilih dua kali");
     if (Number.isNaN(Date.parse(`${body.date}T00:00:00Z`)) || body.date < "2020-01-01" || body.date > "2100-12-31") throw new HttpError(400, "Tanggal tidak valid");
@@ -251,13 +298,26 @@ timesheetApprovalRouter.post(
         const unit = unitRes.rows[0];
         if (!unit) throw new HttpError(400, `Unit "${body.unitId}" tidak ditemukan di master unit.`);
 
-        const wo = await tx.execute<{ wo_id: string; unit_id: string; operator: string | null; ok: boolean }>(
-          sql`select wo_id, unit_id, operator::text as operator, (${body.date}::date between wo_start_date and wo_finish_date) as ok from rental.work_order where wo_id = ${body.woId}`,
-        );
-        if (!wo.rows[0]) throw new HttpError(400, `Work order ${body.woId} tidak ada.`);
-        if (wo.rows[0].unit_id !== unit.unit_id) throw new HttpError(400, `Work order ${body.woId} untuk unit ${wo.rows[0].unit_id}, sedangkan timesheet ini unit ${unit.unit_id}.`);
-        if (!wo.rows[0].ok) throw new HttpError(400, `Tanggal timesheet di luar periode work order ${body.woId}.`);
-        if (wo.rows[0].operator && wo.rows[0].operator !== body.operatorId) throw new HttpError(400, "Operator tidak sama dengan operator di work order yang dipilih.");
+        if (isStandby) {
+          // Timesheet standby menunjuk satu hari standby (rental.standby_log), bukan work order.
+          const sb = await tx.execute<{ id: number; unit_id: string; date: string }>(
+            sql`select id, unit_id, date::text as date from rental.standby_log where id = ${body.standbyId} for update`,
+          );
+          const s = sb.rows[0];
+          if (!s) throw new HttpError(400, `Hari standby ${body.standbyId} tidak ada.`);
+          if (s.unit_id !== unit.unit_id) throw new HttpError(400, `Hari standby ${s.id} untuk unit ${s.unit_id}, sedangkan timesheet ini unit ${unit.unit_id}.`);
+          if (s.date !== body.date) throw new HttpError(400, `Tanggal timesheet berbeda dengan tanggal hari standby ${s.id} (${s.date}).`);
+          const taken = await tx.execute<{ ts_id: string }>(sql`select ts_id from rental.timesheet where standby_id = ${s.id}`);
+          if (taken.rows.length) throw new HttpError(409, `Hari standby ini sudah punya timesheet ${taken.rows[0].ts_id}.`);
+        } else {
+          const wo = await tx.execute<{ wo_id: string; unit_id: string; operator: string | null; ok: boolean }>(
+            sql`select wo_id, unit_id, operator::text as operator, (${body.date}::date between wo_start_date and wo_finish_date) as ok from rental.work_order where wo_id = ${body.woId}`,
+          );
+          if (!wo.rows[0]) throw new HttpError(400, `Work order ${body.woId} tidak ada.`);
+          if (wo.rows[0].unit_id !== unit.unit_id) throw new HttpError(400, `Work order ${body.woId} untuk unit ${wo.rows[0].unit_id}, sedangkan timesheet ini unit ${unit.unit_id}.`);
+          if (!wo.rows[0].ok) throw new HttpError(400, `Tanggal timesheet di luar periode work order ${body.woId}.`);
+          if (wo.rows[0].operator && wo.rows[0].operator !== body.operatorId) throw new HttpError(400, "Operator tidak sama dengan operator di work order yang dipilih.");
+        }
 
         const dup = await tx.execute(sql`select 1 from rental.timesheet where ts_id = ${body.tsNo}`);
         if (dup.rows.length) throw new HttpError(409, `Nomor timesheet ${body.tsNo} sudah ada.`);
@@ -272,23 +332,24 @@ timesheetApprovalRouter.post(
         const t = (v: string) => (v === "" ? null : v);
         await tx.execute(
           sql`insert into rental.timesheet
-                (ts_id, dispatch, arrive, start, finish, "return", time, volume, pipe, batching_plant, unit_type, date, location, remarks, customer, unit_id, work_order_id, operator, image_filename, status, distance_km)
+                (ts_id, dispatch, arrive, start, finish, "return", time, volume, pipe, batching_plant, unit_type, date, location, remarks, customer, unit_id, work_order_id, operator, image_filename, status, distance_km, ts_type, standby_id)
               values
                 (${body.tsNo}, ${t(body.dispatch)}::time, ${t(body.arrive)}::time, ${body.start}::time, ${body.finish}::time, ${t(body.returnTime)}::time,
                  ${hours}, ${body.volume}, ${t(body.pipe)}, ${t(body.batchingPlant)}, ${unit.unit_type}, ${body.date}::date, ${t(body.location)}, ${t(body.notes)}, ${t(body.customer)},
-                 ${unit.unit_id}, ${body.woId}, ${op.rows[0].full_name}, ${clean(b.image_filename)}, ${body.status}, ${body.distanceKm})`,
+                 ${unit.unit_id}, ${isStandby ? null : body.woId}, ${op.rows[0].full_name}, ${clean(b.image_filename)}, ${body.status}, ${body.distanceKm},
+                 ${isStandby ? "standby" : "work"}::rental.timesheet_type, ${isStandby ? body.standbyId : null})`,
         );
         await tx.execute(sql`insert into rental.operator_and_crew_assignment (ts_id, employee_id, role) values (${body.tsNo}, ${body.operatorId}::uuid, 'OPERATOR')`);
         for (const crewId of body.crewIds)
           await tx.execute(sql`insert into rental.operator_and_crew_assignment (ts_id, employee_id, role) values (${body.tsNo}, ${crewId}::uuid, 'CREW')`);
 
-        await tx.execute(sql`update rental.buffer_timesheet set status = 'APPROVED', wo_id = ${body.woId}, updated_at = now() where id = ${id}`);
-        await audit(tx, userId, "timesheet:approve", "buffer_timesheet", id, { ts_id: body.tsNo, work_order_id: body.woId, unit_id: unit.unit_id, date: body.date, status: body.status, operator: body.operatorId, crew_ids: body.crewIds }, { status: "PENDING" });
-        return { id, status: "APPROVED", tsId: body.tsNo, workOrderId: body.woId, unitId: unit.unit_id, date: body.date };
+        await tx.execute(sql`update rental.buffer_timesheet set status = 'APPROVED', wo_id = ${isStandby ? null : body.woId}, updated_at = now() where id = ${id}`);
+        await audit(tx, userId, "timesheet:approve", "buffer_timesheet", id, { ts_id: body.tsNo, work_order_id: isStandby ? null : body.woId, standby_id: isStandby ? body.standbyId : null, ts_type: isStandby ? "standby" : "work", unit_id: unit.unit_id, date: body.date, status: body.status, operator: body.operatorId, crew_ids: body.crewIds }, { status: "PENDING" });
+        return { id, status: "APPROVED", tsId: body.tsNo, workOrderId: isStandby ? null : body.woId, standbyId: isStandby ? body.standbyId : null, tsType: isStandby ? "standby" : "work", unitId: unit.unit_id, date: body.date };
       });
       res.json(result);
     } catch (e) {
-      if ((e as { cause?: { code?: string } })?.cause?.code === "23505") throw new HttpError(409, "Work order ini sudah punya timesheet di tanggal itu, atau nomor timesheet sudah ada.");
+      if ((e as { cause?: { code?: string } })?.cause?.code === "23505") throw new HttpError(409, isStandby ? "Hari standby ini sudah punya timesheet, atau nomor timesheet sudah ada." : "Work order ini sudah punya timesheet di tanggal itu, atau nomor timesheet sudah ada.");
       throw e;
     }
   }),
